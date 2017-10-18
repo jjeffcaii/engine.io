@@ -1,5 +1,5 @@
 # Engine.IO (WARNING: STILL WORKING!!!!)
-Server-side [Engine.IO](https://github.com/socketio/engine.io) in Golang.
+Unofficial server-side [Engine.IO](https://github.com/socketio/engine.io) in Golang.
 
 ## Example
 
