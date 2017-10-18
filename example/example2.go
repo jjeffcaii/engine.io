@@ -1,9 +1,3 @@
-# Engine.IO (WARNING: STILL WORKING!!!!)
-Server-side [Engine.IO](https://github.com/socketio/engine.io) in Golang.
-
-## Example
-
-``` golang
 package main
 
 import (
@@ -27,5 +21,3 @@ func main() {
 	})
 	log.Fatalln(server.Listen(":3000"))
 }
-
-```
