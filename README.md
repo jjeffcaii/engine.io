@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-# engine.io
-a server-side engine.io in golang.
-=======
 # Engine.IO (WARNING: STILL WORKING!!!!)
 Server-side [Engine.IO](https://github.com/socketio/engine.io) in Golang.
 
@@ -34,4 +30,3 @@ func main() {
 }
 
 ```
->>>>>>> add readme
