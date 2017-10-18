@@ -10,7 +10,7 @@ import (
 	"flag"
 	"log"
 
-	eio "engine.io"
+	eio "github.com/jjeffcaii/engine.io"
 )
 
 func main() {
