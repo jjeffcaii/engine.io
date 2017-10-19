@@ -50,19 +50,21 @@ func (p *socketImpl) Send(message interface{}) error {
 }
 
 func (p *socketImpl) SendCustom(message interface{}, options *MessageOptions) error {
-	if message == nil {
-		panic("cannot send nil message!")
-	}
 	p.locker.Lock()
 	defer p.locker.Unlock()
 	if p.heart == 0 {
-		return errors.New(fmt.Sprintf("socket#%s is closed.", p.ctx.sid))
+		return errors.New(fmt.Sprintf("socket#%s is closed", p.ctx.sid))
 	}
-	pack := new(Packet)
-	err := pack.fromAny(message)
-	if err == nil {
-		p.outbox <- pack
-	}
+	var err error = nil
+	func() {
+		defer func() {
+			e := recover()
+			if v, ok := e.(error); ok {
+				err = v
+			}
+		}()
+		p.outbox <- newPacketAuto(typeMessage, message)
+	}()
 	return err
 }
 
@@ -94,8 +96,7 @@ func (p *socketImpl) fire() {
 					p.heart = uint32(time.Now().Unix())
 				}
 				p.locker.Unlock()
-				pong := new(Packet)
-				pong.fromBytes(typePong, packet.data)
+				pong := newPacket(typePong, packet.data)
 				p.outbox <- pong
 				break
 			case typeMessage:

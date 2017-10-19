@@ -11,6 +11,8 @@ import (
 	"github.com/golang/glog"
 )
 
+const protocolVersion uint8 = 3
+
 var (
 	transportWebsocket = "websocket"
 	transportPolling   = "polling"
@@ -26,7 +28,7 @@ type context struct {
 	res       http.ResponseWriter
 }
 
-type upgradeSuccess struct {
+type initMsg struct {
 	Sid          string   `json:"sid"`
 	Upgrades     []string `json:"upgrades"`
 	PingInterval uint32   `json:"pingInterval"`
@@ -52,26 +54,25 @@ func (ctx *context) validate() bool {
 	if len(ctx.transport) < 1 {
 		return false
 	}
-	if len(ctx.eio) < 1 {
+	if ctx.eio != fmt.Sprintf("%d", protocolVersion) {
 		return false
 	}
 	return true
 }
 
 type engineImpl struct {
-	path      string
-	options   *engineOptions
-	onSockets []func(Socket)
-	sockets   map[string]*socketImpl
-	locker    *sync.Mutex
-
+	path       string
+	options    *engineOptions
+	onSockets  []func(Socket)
+	sockets    map[string]*socketImpl
+	locker     *sync.Mutex
 	transports map[string]transport
 }
 
 func (p *engineImpl) Listen(addr string) error {
 	http.HandleFunc(p.path, func(writer http.ResponseWriter, request *http.Request) {
 		query := request.URL.Query()
-		handshake := context{
+		ctx := context{
 			sid:       query.Get("sid"),
 			eio:       query.Get("EIO"),
 			transport: query.Get("transport"),
@@ -80,8 +81,7 @@ func (p *engineImpl) Listen(addr string) error {
 			req:       request,
 			res:       writer,
 		}
-
-		if !handshake.validate() {
+		if !ctx.validate() {
 			writer.WriteHeader(http.StatusBadRequest)
 			writer.Header().Set("Content-Type", "application/json")
 			e := engineError{Code: 0, Message: "Transport unknown"}
@@ -89,7 +89,7 @@ func (p *engineImpl) Listen(addr string) error {
 			writer.Write(bs)
 			return
 		}
-		trans, ok := p.transports[handshake.transport]
+		trans, ok := p.transports[ctx.transport]
 		if !ok {
 			writer.WriteHeader(http.StatusBadRequest)
 			writer.Header().Set("Content-Type", "application/json")
@@ -98,7 +98,7 @@ func (p *engineImpl) Listen(addr string) error {
 			writer.Write(bs)
 			return
 		}
-		trans.transport(&handshake)
+		trans.transport(&ctx)
 	})
 
 	tick := time.NewTicker(time.Millisecond * time.Duration(p.options.pingInterval))
@@ -131,6 +131,10 @@ func (p *engineImpl) Listen(addr string) error {
 	}()
 
 	return http.ListenAndServe(addr, nil)
+}
+
+func (p *engineImpl) GetProtocol() uint8 {
+	return protocolVersion
 }
 
 func (p *engineImpl) GetClients() map[string]Socket {

@@ -5,6 +5,7 @@ type MessageOptions struct {
 
 type Engine interface {
 	Listen(addr string) error
+	GetProtocol() uint8
 	GetClients() map[string]Socket
 	OnConnect(func(socket Socket)) Engine
 }

@@ -53,7 +53,13 @@ func (p *xhrTransport) transport(ctx *context) error {
 		data = []byte("ok")
 	} else {
 		headers.Set("Content-Type", "text/plain; charset=UTF-8")
-		if bs, err := marshallStringPayload(pks); err != nil {
+		var codec payloadCodec
+		if ctx.binary {
+			codec = b64PayloadCodec
+		} else {
+			codec = strPayloadCodec
+		}
+		if bs, err := codec.encode(pks...); err != nil {
 			ctx.res.WriteHeader(http.StatusInternalServerError)
 			ee := engineError{Code: 0, Message: err.Error()}
 			bs, _ := json.Marshal(&ee)
@@ -63,7 +69,6 @@ func (p *xhrTransport) transport(ctx *context) error {
 			data = bs
 		}
 	}
-	//	glog.Infof("==> response: %s\n", data)
 	_, err := ctx.res.Write(data)
 	return err
 }
@@ -91,11 +96,7 @@ func (p *xhrTransport) asPolling(ctx *context) ([]*Packet, error) {
 	if len(queue) < 1 {
 		select {
 		case <-closeNotifier.CloseNotify():
-			kill := Packet{
-				typo: typeClose,
-				data: make([]byte, 0),
-			}
-			queue = append(queue, &kill)
+			queue = append(queue, newPacket(typeClose, make([]byte, 0)))
 			go socket.Close()
 			break
 		case pk := <-socket.outbox:
@@ -120,7 +121,13 @@ func (p *xhrTransport) asPushing(ctx *context) ([]*Packet, error) {
 		return nil, errors.New(fmt.Sprintf("No such socket#%s", ctx.sid))
 	}
 	body, _ := ioutil.ReadAll(ctx.req.Body)
-	packets, err := unmarshallStringPayload(body)
+	var codec payloadCodec
+	if ctx.binary {
+		codec = b64PayloadCodec
+	} else {
+		codec = strPayloadCodec
+	}
+	packets, err := codec.decode(body)
 	if err != nil {
 		return nil, err
 	}
@@ -143,17 +150,13 @@ func (p *xhrTransport) asNewborn(ctx *context) ([]*Packet, error) {
 }
 
 func (p *xhrTransport) newUpgradeSuccess(sid string) *Packet {
-	us := upgradeSuccess{
+	us := initMsg{
 		Sid:          sid,
 		Upgrades:     []string{transportWebsocket},
 		PingInterval: p.server.options.pingInterval,
 		PingTimeout:  p.server.options.pingTimeout,
 	}
-	packet := new(Packet)
-	if err := packet.fromJSON(typeOpen, &us); err != nil {
-		panic(err)
-	}
-	return packet
+	return newPacketByJSON(typeOpen, &us)
 }
 
 func newXhrTransport(server *engineImpl) *xhrTransport {

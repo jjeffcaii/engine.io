@@ -13,17 +13,13 @@ type wsTransport struct {
 }
 
 func (p *wsTransport) newUpgradeSuccess(socket Socket) *Packet {
-	us := upgradeSuccess{
+	us := initMsg{
 		Sid:          socket.Id(),
 		Upgrades:     []string{transportWebsocket},
 		PingInterval: p.server.options.pingInterval,
 		PingTimeout:  p.server.options.pingTimeout,
 	}
-	packet := new(Packet)
-	if err := packet.fromJSON(typeOpen, &us); err != nil {
-		panic(err)
-	}
-	return packet
+	return newPacketByJSON(typeOpen, &us)
 }
 
 func (p *wsTransport) transport(ctx *context) error {
@@ -43,7 +39,7 @@ func (p *wsTransport) transport(ctx *context) error {
 	})
 
 	mailman := func(packet *Packet) error {
-		bs, err := stringEncoder.Encode(packet)
+		bs, err := stringEncoder.encode(packet)
 		if err != nil {
 			return err
 		}
@@ -82,7 +78,7 @@ func (p *wsTransport) transport(ctx *context) error {
 		default:
 			break
 		case websocket.TextMessage:
-			if pack, err := stringEncoder.Decode(message); err != nil {
+			if pack, err := stringEncoder.decode(message); err != nil {
 				glog.Errorln("decode packet failed:", err)
 				return err
 			} else {
@@ -90,7 +86,7 @@ func (p *wsTransport) transport(ctx *context) error {
 			}
 			break
 		case websocket.BinaryMessage:
-			if pack, err := binaryEncoder.Decode(message); err != nil {
+			if pack, err := binaryEncoder.decode(message); err != nil {
 				glog.Errorln("decode packet failed:", err)
 				return err
 			} else {

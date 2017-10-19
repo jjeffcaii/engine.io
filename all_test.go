@@ -9,12 +9,11 @@ import (
 func TestPayload(t *testing.T) {
 	packets := make([]*Packet, 0)
 	for i := 0; i < 10; i++ {
-		pack := new(Packet)
-		pack.fromString(typeMessage, fmt.Sprintf("test:%d", i))
+		pack := newPacketByString(typeMessage, fmt.Sprintf("test:%d", i))
 		packets = append(packets, pack)
 	}
 
-	payload, _ := marshallStringPayload(packets)
+	payload, _ := encodePayload(packets)
 	fmt.Println(string(payload))
 
 	ps, _ := unmarshallStringPayload(payload)
