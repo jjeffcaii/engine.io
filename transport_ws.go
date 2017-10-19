@@ -15,7 +15,7 @@ type wsTransport struct {
 func (p *wsTransport) newUpgradeSuccess(socket Socket) *Packet {
 	us := initMsg{
 		Sid:          socket.Id(),
-		Upgrades:     []string{transportWebsocket},
+		Upgrades:     make([]string, 0),
 		PingInterval: p.server.options.pingInterval,
 		PingTimeout:  p.server.options.pingTimeout,
 	}

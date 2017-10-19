@@ -13,11 +13,15 @@ const (
 	typeMessage uint8 = 4
 	typeUpgrade uint8 = 5
 	typeNoop    uint8 = 6
+
+	optBin  uint8 = 0x01 << 0
+	optComp uint8 = 0x01 << 1
 )
 
 type Packet struct {
-	typo uint8
-	data []byte
+	typo   uint8
+	data   []byte
+	option uint8
 }
 
 func newPacket(packetType uint8, data []byte) *Packet {

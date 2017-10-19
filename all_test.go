@@ -13,10 +13,10 @@ func TestPayload(t *testing.T) {
 		packets = append(packets, pack)
 	}
 
-	payload, _ := encodePayload(packets)
+	payload, _ := strPayloadCodec.encode(packets...)
 	fmt.Println(string(payload))
 
-	ps, _ := unmarshallStringPayload(payload)
+	ps, _ := strPayloadCodec.decode(payload)
 
 	for _, p := range ps {
 		fmt.Printf("type=%d, data=%s\n", p.typo, p.data)

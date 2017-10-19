@@ -13,12 +13,13 @@ func main() {
 	server := eio.NewEngineBuilder().Build()
 
 	server.OnConnect(func(socket eio.Socket) {
-		log.Println("========> socket connect:", socket.Id())
+		//log.Println("========> socket connect:", socket.Id())
 		socket.OnMessage(func(data []byte) {
 			// do nothing.
+			log.Println("===> got message:", string(data))
 		})
 		socket.OnClose(func(reason string) {
-			log.Println("========> socket closed:", socket.Id())
+			//log.Println("========> socket closed:", socket.Id())
 		})
 	})
 	log.Fatalln(server.Listen(":3000"))

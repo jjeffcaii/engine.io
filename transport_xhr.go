@@ -7,6 +7,8 @@ import (
 	"io/ioutil"
 	"net/http"
 	"time"
+
+	"github.com/golang/glog"
 )
 
 type xhrTransport struct {
@@ -46,6 +48,7 @@ func (p *xhrTransport) transport(ctx *context) error {
 		headers.Set("Content-Type", "text/plain; charset=UTF-8")
 		ee := engineError{Code: 0, Message: err.Error()}
 		bs, _ := json.Marshal(&ee)
+		glog.Errorln("write error:", string(bs))
 		data = bs
 	} else if pks == nil || len(pks) < 1 {
 		ctx.res.WriteHeader(http.StatusOK)
@@ -96,6 +99,7 @@ func (p *xhrTransport) asPolling(ctx *context) ([]*Packet, error) {
 	if len(queue) < 1 {
 		select {
 		case <-closeNotifier.CloseNotify():
+			glog.Warningln(">>>>>>>>>>>>>>> unexpected broken request")
 			queue = append(queue, newPacket(typeClose, make([]byte, 0)))
 			go socket.Close()
 			break
