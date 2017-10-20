@@ -6,6 +6,8 @@ import (
 	_ "net/http/pprof"
 
 	eio "github.com/jjeffcaii/engine.io"
+	"net/http"
+	"fmt"
 )
 
 func main() {
@@ -23,6 +25,11 @@ func main() {
 		})
 		socket.Send("test message string")
 		socket.Send([]byte("test message binary"))
+	})
+
+	http.HandleFunc("/conns", func(writer http.ResponseWriter, request *http.Request) {
+		writer.WriteHeader(http.StatusOK)
+		writer.Write([]byte(fmt.Sprintf("totals: %d", server.CountClients())))
 	})
 	log.Fatalln(server.Listen(":3000"))
 }
