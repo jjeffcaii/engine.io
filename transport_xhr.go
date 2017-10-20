@@ -99,7 +99,6 @@ func (p *xhrTransport) asPolling(ctx *context) ([]*Packet, error) {
 	if len(queue) < 1 {
 		select {
 		case <-closeNotifier.CloseNotify():
-			glog.Warningln(">>>>>>>>>>>>>>> unexpected broken request")
 			queue = append(queue, newPacket(typeClose, make([]byte, 0)))
 			go socket.Close()
 			break
@@ -142,7 +141,7 @@ func (p *xhrTransport) asPushing(ctx *context) ([]*Packet, error) {
 }
 
 func (p *xhrTransport) asNewborn(ctx *context) ([]*Packet, error) {
-	ctx.sid = newSocketId()
+	ctx.sid = p.server.generateId()
 	up := p.newUpgradeSuccess(ctx.sid)
 	socket := newSocket(ctx, p.server, 128, 128)
 	p.server.putSocket(socket)
@@ -156,9 +155,12 @@ func (p *xhrTransport) asNewborn(ctx *context) ([]*Packet, error) {
 func (p *xhrTransport) newUpgradeSuccess(sid string) *Packet {
 	us := initMsg{
 		Sid:          sid,
-		Upgrades:     []string{transportWebsocket},
+		Upgrades:     make([]string, 0),
 		PingInterval: p.server.options.pingInterval,
 		PingTimeout:  p.server.options.pingTimeout,
+	}
+	if p.server.options.allowUpgrades {
+		us.Upgrades = append(us.Upgrades, transportWebsocket)
 	}
 	return newPacketByJSON(typeOpen, &us)
 }

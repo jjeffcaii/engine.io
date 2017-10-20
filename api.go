@@ -1,7 +1,11 @@
 package engine_io
 
-type MessageOptions struct {
-}
+type SendOption uint8
+
+const (
+	BINARY   SendOption = 0x01
+	COMPRESS SendOption = 0x01 << 1
+)
 
 type Engine interface {
 	Listen(addr string) error
@@ -21,6 +25,6 @@ type Socket interface {
 	//OnDrain() Socket
 	//OnPacket() Socket
 	Send(message interface{}) error
-	SendCustom(message interface{}, options *MessageOptions) error
+	SendCustom(message interface{}, options SendOption) error
 	Close()
 }

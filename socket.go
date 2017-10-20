@@ -2,10 +2,11 @@ package engine_io
 
 import (
 	"errors"
-	"sync"
 	"time"
 
 	"fmt"
+
+	"sync/atomic"
 
 	"github.com/golang/glog"
 )
@@ -19,7 +20,6 @@ type socketImpl struct {
 	onCloses   []func(reason string)
 	outbox     chan *Packet
 	inbox      chan *Packet
-	locker     *sync.Mutex
 }
 
 func (p *socketImpl) Id() string {
@@ -46,13 +46,11 @@ func (p *socketImpl) OnError(handler func(err error)) Socket {
 }
 
 func (p *socketImpl) Send(message interface{}) error {
-	return p.SendCustom(message, nil)
+	return p.SendCustom(message, 0)
 }
 
-func (p *socketImpl) SendCustom(message interface{}, options *MessageOptions) error {
-	p.locker.Lock()
-	defer p.locker.Unlock()
-	if p.heart == 0 {
+func (p *socketImpl) SendCustom(message interface{}, options SendOption) error {
+	if atomic.LoadUint32(&(p.heart)) == 0 {
 		return errors.New(fmt.Sprintf("socket#%s is closed", p.ctx.sid))
 	}
 	var err error = nil
@@ -63,26 +61,30 @@ func (p *socketImpl) SendCustom(message interface{}, options *MessageOptions) er
 				err = v
 			}
 		}()
-		p.outbox <- newPacketAuto(typeMessage, message)
+		packet := newPacketAuto(typeMessage, message)
+		packet.option |= options
+		p.outbox <- packet
 	}()
 	return err
 }
 
 func (p *socketImpl) Close() {
-	p.locker.Lock()
-	defer p.locker.Unlock()
-
-	if p.heart == 0 {
+	if atomic.LoadUint32(&(p.heart)) == 0 {
 		return
 	}
-	p.heart = 0
+	atomic.StoreUint32(&(p.heart), 0)
+	// close socket
 	close(p.inbox)
 	close(p.outbox)
 	p.engine.removeSocket(p)
 	for _, fn := range p.onCloses {
-		// TODO: add close reason.
+		// TODO: support close reason.
 		go fn("")
 	}
+}
+
+func now() uint32 {
+	return uint32(time.Now().Unix())
 }
 
 func (p *socketImpl) fire() {
@@ -91,11 +93,9 @@ func (p *socketImpl) fire() {
 			switch packet.typo {
 			case typePing:
 				// refresh heartbeat then pong it.
-				p.locker.Lock()
-				if p.heart != 0 {
-					p.heart = uint32(time.Now().Unix())
+				if atomic.LoadUint32(&(p.heart)) != 0 {
+					atomic.StoreUint32(&(p.heart), now())
 				}
-				p.locker.Unlock()
 				pong := newPacket(typePong, packet.data)
 				p.outbox <- pong
 				break
@@ -120,21 +120,19 @@ func (p *socketImpl) fire() {
 }
 
 func (p *socketImpl) isLost() bool {
-	now := uint32(time.Now().Unix())
-	d := 1000 * (now - p.heart)
+	d := 1000 * (now() - atomic.LoadUint32(&(p.heart)))
 	return d > p.engine.options.pingTimeout
 }
 
 func newSocket(ctx *context, engine *engineImpl, isize int, osize int) *socketImpl {
 	socket := socketImpl{
-		heart:      uint32(time.Now().Unix()),
+		heart:      now(),
 		ctx:        ctx,
 		engine:     engine,
 		inbox:      make(chan *Packet, isize),
 		outbox:     make(chan *Packet, osize),
 		onMessages: make([]func([]byte), 0),
 		onErrors:   make([]func(error), 0),
-		locker:     new(sync.Mutex),
 	}
 	return &socket
 }

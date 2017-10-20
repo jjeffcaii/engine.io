@@ -1,19 +1,26 @@
 package engine_io
 
 import (
+	"bytes"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/golang/glog"
 )
 
-const protocolVersion uint8 = 3
-
 var (
+	protocolVersion = struct {
+		n uint8
+		s string
+	}{3, "3",}
 	transportWebsocket = "websocket"
 	transportPolling   = "polling"
 )
@@ -36,9 +43,10 @@ type initMsg struct {
 }
 
 type engineOptions struct {
-	cookie       bool
-	pingInterval uint32
-	pingTimeout  uint32
+	allowUpgrades bool
+	cookie        bool
+	pingInterval  uint32
+	pingTimeout   uint32
 }
 
 type engineError struct {
@@ -50,23 +58,19 @@ type transport interface {
 	transport(ctx *context) error
 }
 
-func (ctx *context) validate() bool {
-	if len(ctx.transport) < 1 {
-		return false
-	}
-	if ctx.eio != fmt.Sprintf("%d", protocolVersion) {
-		return false
-	}
-	return true
-}
-
 type engineImpl struct {
+	sequence   uint32
 	path       string
 	options    *engineOptions
 	onSockets  []func(Socket)
 	sockets    map[string]*socketImpl
-	locker     *sync.Mutex
+	locker     *sync.RWMutex
 	transports map[string]transport
+	sidGen     func(seq uint32) string
+}
+
+func (p *engineImpl) generateId() string {
+	return p.sidGen(atomic.AddUint32(&(p.sequence), 1))
 }
 
 func (p *engineImpl) Listen(addr string) error {
@@ -81,7 +85,16 @@ func (p *engineImpl) Listen(addr string) error {
 			req:       request,
 			res:       writer,
 		}
-		if !ctx.validate() {
+
+		isValidContext := true
+		if len(ctx.transport) < 1 {
+			isValidContext = false
+		}
+		if ctx.eio != protocolVersion.s {
+			isValidContext = false
+		}
+
+		if !isValidContext {
 			writer.WriteHeader(http.StatusBadRequest)
 			writer.Header().Set("Content-Type", "application/json")
 			e := engineError{Code: 0, Message: "Transport unknown"}
@@ -111,14 +124,14 @@ func (p *engineImpl) Listen(addr string) error {
 			select {
 			case <-tick.C:
 				losts := make([]*socketImpl, 0)
-				p.locker.Lock()
+				p.locker.RLock()
 				for _, v := range p.sockets {
 					if v.isLost() {
 						glog.Warningln("********* find a lost socket:", v.Id())
 						losts = append(losts, v)
 					}
 				}
-				p.locker.Unlock()
+				p.locker.RUnlock()
 				for _, it := range losts {
 					it.Close()
 				}
@@ -134,16 +147,16 @@ func (p *engineImpl) Listen(addr string) error {
 }
 
 func (p *engineImpl) GetProtocol() uint8 {
-	return protocolVersion
+	return protocolVersion.n
 }
 
 func (p *engineImpl) GetClients() map[string]Socket {
 	snapshot := make(map[string]Socket)
-	p.locker.Lock()
-	defer p.locker.Unlock()
+	p.locker.RLock()
 	for k, v := range p.sockets {
 		snapshot[k] = v
 	}
+	p.locker.RUnlock()
 	return snapshot
 }
 
@@ -154,14 +167,14 @@ func (p *engineImpl) OnConnect(onConn func(socket Socket)) Engine {
 
 func (p *engineImpl) removeSocket(socket *socketImpl) {
 	p.locker.Lock()
-	defer p.locker.Unlock()
 	delete(p.sockets, socket.Id())
+	p.locker.Unlock()
 }
 
 func (p *engineImpl) putSocket(socket *socketImpl) {
+	sid := socket.Id()
 	p.locker.Lock()
 	defer p.locker.Unlock()
-	sid := socket.Id()
 	if _, ok := p.sockets[sid]; ok {
 		panic(errors.New(fmt.Sprintf("socket#%s exists already", sid)))
 	} else {
@@ -170,27 +183,28 @@ func (p *engineImpl) putSocket(socket *socketImpl) {
 }
 
 func (p *engineImpl) getSocket(id string) *socketImpl {
-	p.locker.Lock()
-	defer p.locker.Unlock()
-	return p.sockets[id]
+	p.locker.RLock()
+	socket := p.sockets[id]
+	p.locker.RUnlock()
+	return socket
 }
 
 func (p *engineImpl) hasSocket(id string) bool {
-	p.locker.Lock()
-	defer p.locker.Unlock()
+	p.locker.RLock()
 	_, ok := p.sockets[id]
-	keys := make([]string, 0)
-	for k := range p.sockets {
-		keys = append(keys, k)
-	}
+	p.locker.RUnlock()
 	return ok
 }
 
 type engineBuilder struct {
-	cookie       bool
-	pingInterval uint32
-	pingTimeout  uint32
-	path         string
+	options *engineOptions
+	path    string
+	gen     func(uint32) string
+}
+
+func (p *engineBuilder) SetGenerateId(gen func(uint32) string) *engineBuilder {
+	p.gen = gen
+	return p
 }
 
 func (p *engineBuilder) SetPath(path string) *engineBuilder {
@@ -199,45 +213,64 @@ func (p *engineBuilder) SetPath(path string) *engineBuilder {
 }
 
 func (p *engineBuilder) SetCookie(enable bool) *engineBuilder {
-	p.cookie = enable
+	p.options.cookie = enable
 	return p
 }
 
 func (p *engineBuilder) SetPingInterval(interval uint32) *engineBuilder {
-	p.pingInterval = interval
+	p.options.pingInterval = interval
 	return p
 }
 
 func (p *engineBuilder) SetPingTimeout(timeout uint32) *engineBuilder {
-	p.pingTimeout = timeout
+	p.options.pingTimeout = timeout
 	return p
 }
 
 func (p *engineBuilder) Build() Engine {
-	opt := engineOptions{
-		cookie:       p.cookie,
-		pingInterval: p.pingInterval,
-		pingTimeout:  p.pingTimeout,
-	}
+	clone := func(origin engineOptions) engineOptions {
+		return origin
+	}(*p.options)
 	eng := &engineImpl{
 		onSockets:  make([]func(Socket), 0),
-		options:    &opt,
+		options:    &clone,
 		sockets:    make(map[string]*socketImpl, 0),
-		locker:     new(sync.Mutex),
+		locker:     new(sync.RWMutex),
 		transports: make(map[string]transport, 0),
 		path:       p.path,
+		sidGen:     p.gen,
 	}
 	eng.transports[transportWebsocket] = newWebsocketTransport(eng)
 	eng.transports[transportPolling] = newXhrTransport(eng)
 	return eng
 }
 
+func defaultIdGen(seed uint32) string {
+	bf := new(bytes.Buffer)
+	bf.Write(randStr(12))
+	b := make([]byte, 4)
+	binary.BigEndian.PutUint32(b, seed)
+	for i := 1; i < 4; i++ {
+		bf.WriteByte(b[i])
+	}
+	bs := bf.Bytes()
+	s := base64.StdEncoding.EncodeToString(bs)
+	s = strings.Replace(s, "/", "_", -1)
+	s = strings.Replace(s, "+", "-", -1)
+	return s
+}
+
 func NewEngineBuilder() *engineBuilder {
+	options := engineOptions{
+		cookie:        false,
+		pingInterval:  25000,
+		pingTimeout:   60000,
+		allowUpgrades: true,
+	}
 	builder := engineBuilder{
-		path:         "/engine.io/",
-		cookie:       false,
-		pingInterval: 25000,
-		pingTimeout:  60000,
+		path:    "/engine.io/",
+		options: &options,
+		gen:     defaultIdGen,
 	}
 	return &builder
 }

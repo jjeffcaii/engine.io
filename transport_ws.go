@@ -30,7 +30,7 @@ func (p *wsTransport) transport(ctx *context) error {
 	}
 
 	if len(ctx.sid) < 1 {
-		ctx.sid = newSocketId()
+		ctx.sid = p.server.generateId()
 	}
 	socket := newSocket(ctx, p.server, 128, 128)
 
