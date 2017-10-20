@@ -9,6 +9,8 @@ import (
 
 	"fmt"
 
+	"net/http"
+
 	eio "github.com/jjeffcaii/engine.io"
 )
 
@@ -47,5 +49,11 @@ func main() {
 			log.Println("========> socket closed:", socket.Id())
 		})
 	})
+
+	http.HandleFunc("/conns", func(writer http.ResponseWriter, request *http.Request) {
+		writer.WriteHeader(http.StatusOK)
+		writer.Write([]byte(fmt.Sprintf("totals: %d", server.CountClients())))
+	})
+
 	log.Fatalln(server.Listen(":3000"))
 }

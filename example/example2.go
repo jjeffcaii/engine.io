@@ -21,6 +21,8 @@ func main() {
 		socket.OnClose(func(reason string) {
 			//log.Println("========> socket closed:", socket.Id())
 		})
+		socket.Send("test message string")
+		socket.Send([]byte("test message binary"))
 	})
 	log.Fatalln(server.Listen(":3000"))
 }

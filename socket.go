@@ -96,7 +96,7 @@ func (p *socketImpl) fire() {
 				if atomic.LoadUint32(&(p.heart)) != 0 {
 					atomic.StoreUint32(&(p.heart), now())
 				}
-				pong := newPacket(typePong, packet.data)
+				pong := newPacket(typePong, packet.data, 0)
 				p.outbox <- pong
 				break
 			case typeMessage:

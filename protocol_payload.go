@@ -12,22 +12,9 @@ type payloadCodec interface {
 	decode(input []byte) ([]*Packet, error)
 }
 
-var strPayloadCodec payloadCodec
-var b64PayloadCodec payloadCodec
-
-func init() {
-	foo := stdPayloadCodec{
-		codec: stringEncoder,
-	}
-	bar := stdPayloadCodec{
-		codec: base64Encoder,
-	}
-	strPayloadCodec = &foo
-	b64PayloadCodec = &bar
-}
+var payloader payloadCodec = new(stdPayloadCodec)
 
 type stdPayloadCodec struct {
-	codec packetCodec
 }
 
 func (p *stdPayloadCodec) encode(packets ...*Packet) ([]byte, error) {
@@ -39,7 +26,13 @@ func (p *stdPayloadCodec) encode(packets ...*Packet) ([]byte, error) {
 		if pack == nil {
 			return nil, errors.New("some packet is nil")
 		}
-		if bs, err := p.codec.encode(pack); err != nil {
+		var cc packetCodec
+		if pack.option&BINARY == BINARY {
+			cc = base64Encoder
+		} else {
+			cc = stringEncoder
+		}
+		if bs, err := cc.encode(pack); err != nil {
 			return nil, err
 		} else if _, err := bf.WriteString(fmt.Sprintf("%d:", len(bs))); err != nil {
 			return nil, err
@@ -64,15 +57,24 @@ func (p *stdPayloadCodec) decode(input []byte) ([]*Packet, error) {
 			continue
 		}
 		s := string(input[offset:cursor])
-		if size, err := strconv.Atoi(s); err != nil {
+		size, err := strconv.Atoi(s)
+		if err != nil {
 			return nil, err
-		} else if packet, err := p.codec.decode(input[(cursor + 1): (cursor + 1 + size)]); err != nil {
-			return nil, err
-		} else {
-			packets = append(packets, packet)
-			cursor += size + 1
-			offset = cursor
 		}
+		bs := input[(cursor + 1): (cursor + 1 + size)]
+		var packet *Packet
+		if p1, err := base64Encoder.decode(bs); err != nil {
+			if p2, err2 := stringEncoder.decode(bs); err2 != nil {
+				return nil, err
+			} else {
+				packet = p2
+			}
+		} else {
+			packet = p1
+		}
+		packets = append(packets, packet)
+		cursor += size + 1
+		offset = cursor
 	}
 	return packets, nil
 }

@@ -56,13 +56,7 @@ func (p *xhrTransport) transport(ctx *context) error {
 		data = []byte("ok")
 	} else {
 		headers.Set("Content-Type", "text/plain; charset=UTF-8")
-		var codec payloadCodec
-		if ctx.binary {
-			codec = b64PayloadCodec
-		} else {
-			codec = strPayloadCodec
-		}
-		if bs, err := codec.encode(pks...); err != nil {
+		if bs, err := payloader.encode(pks...); err != nil {
 			ctx.res.WriteHeader(http.StatusInternalServerError)
 			ee := engineError{Code: 0, Message: err.Error()}
 			bs, _ := json.Marshal(&ee)
@@ -99,7 +93,7 @@ func (p *xhrTransport) asPolling(ctx *context) ([]*Packet, error) {
 	if len(queue) < 1 {
 		select {
 		case <-closeNotifier.CloseNotify():
-			queue = append(queue, newPacket(typeClose, make([]byte, 0)))
+			queue = append(queue, newPacket(typeClose, make([]byte, 0), 0))
 			go socket.Close()
 			break
 		case pk := <-socket.outbox:
@@ -124,13 +118,7 @@ func (p *xhrTransport) asPushing(ctx *context) ([]*Packet, error) {
 		return nil, errors.New(fmt.Sprintf("No such socket#%s", ctx.sid))
 	}
 	body, _ := ioutil.ReadAll(ctx.req.Body)
-	var codec payloadCodec
-	if ctx.binary {
-		codec = b64PayloadCodec
-	} else {
-		codec = strPayloadCodec
-	}
-	packets, err := codec.decode(body)
+	packets, err := payloader.decode(body)
 	if err != nil {
 		return nil, err
 	}

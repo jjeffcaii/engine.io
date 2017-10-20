@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"math/rand"
+
 	"github.com/golang/glog"
 )
 
@@ -26,7 +28,6 @@ var (
 )
 
 type context struct {
-	eio       string
 	transport string
 	sid       string
 	binary    bool
@@ -76,24 +77,13 @@ func (p *engineImpl) generateId() string {
 func (p *engineImpl) Listen(addr string) error {
 	http.HandleFunc(p.path, func(writer http.ResponseWriter, request *http.Request) {
 		query := request.URL.Query()
-		ctx := context{
-			sid:       query.Get("sid"),
-			eio:       query.Get("EIO"),
-			transport: query.Get("transport"),
-			binary:    query.Get("b64") == "1",
-			t:         query.Get("t"),
-			req:       request,
-			res:       writer,
-		}
-
 		isValidContext := true
-		if len(ctx.transport) < 1 {
+		if query.Get("EIO") != protocolVersion.s {
 			isValidContext = false
 		}
-		if ctx.eio != protocolVersion.s {
+		if len(query.Get("transport")) < 1 {
 			isValidContext = false
 		}
-
 		if !isValidContext {
 			writer.WriteHeader(http.StatusBadRequest)
 			writer.Header().Set("Content-Type", "application/json")
@@ -101,6 +91,15 @@ func (p *engineImpl) Listen(addr string) error {
 			bs, _ := json.Marshal(&e)
 			writer.Write(bs)
 			return
+		}
+
+		ctx := context{
+			sid:       query.Get("sid"),
+			transport: query.Get("transport"),
+			binary:    query.Get("b64") == "1",
+			t:         query.Get("t"),
+			req:       request,
+			res:       writer,
 		}
 		trans, ok := p.transports[ctx.transport]
 		if !ok {
@@ -114,11 +113,10 @@ func (p *engineImpl) Listen(addr string) error {
 		trans.transport(&ctx)
 	})
 
+	// cron: check and kill lost socket.
 	tick := time.NewTicker(time.Millisecond * time.Duration(p.options.pingInterval))
 	quit := make(chan uint8)
-
 	defer close(quit)
-
 	go func() {
 		for {
 			select {
@@ -158,6 +156,12 @@ func (p *engineImpl) GetClients() map[string]Socket {
 	}
 	p.locker.RUnlock()
 	return snapshot
+}
+
+func (p *engineImpl) CountClients() int {
+	p.locker.RLock()
+	defer p.locker.RUnlock()
+	return len(p.sockets)
 }
 
 func (p *engineImpl) OnConnect(onConn func(socket Socket)) Engine {
@@ -247,7 +251,9 @@ func (p *engineBuilder) Build() Engine {
 
 func defaultIdGen(seed uint32) string {
 	bf := new(bytes.Buffer)
-	bf.Write(randStr(12))
+	for i := 0; i < 12; i++ {
+		bf.WriteByte(byte(rand.Int31n(256)))
+	}
 	b := make([]byte, 4)
 	binary.BigEndian.PutUint32(b, seed)
 	for i := 1; i < 4; i++ {

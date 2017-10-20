@@ -11,6 +11,7 @@ type Engine interface {
 	Listen(addr string) error
 	GetProtocol() uint8
 	GetClients() map[string]Socket
+	CountClients() int
 	OnConnect(func(socket Socket)) Engine
 }
 

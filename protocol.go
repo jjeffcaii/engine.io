@@ -21,16 +21,17 @@ type Packet struct {
 	option SendOption
 }
 
-func newPacket(packetType uint8, data []byte) *Packet {
+func newPacket(packetType uint8, data []byte, opt SendOption) *Packet {
 	packet := Packet{
-		typo: packetType,
-		data: data,
+		typo:   packetType,
+		data:   data,
+		option: opt,
 	}
 	return &packet
 }
 
 func newPacketByString(packetType uint8, data string) *Packet {
-	return newPacket(packetType, []byte(data))
+	return newPacket(packetType, []byte(data), 0)
 }
 
 func newPacketByJSON(packetType uint8, any interface{}) *Packet {
@@ -38,7 +39,7 @@ func newPacketByJSON(packetType uint8, any interface{}) *Packet {
 	if err != nil {
 		panic(err)
 	}
-	return newPacket(packetType, bs)
+	return newPacket(packetType, bs, 0)
 }
 
 func newPacketAuto(ptype uint8, any interface{}) *Packet {
@@ -50,12 +51,12 @@ func newPacketAuto(ptype uint8, any interface{}) *Packet {
 		return newPacketByString(ptype, v)
 	case []byte:
 		v, _ := any.([]byte)
-		return newPacket(ptype, v)
+		return newPacket(ptype, v, BINARY)
 	case *bytes.Buffer:
 		v, _ := any.(*bytes.Buffer)
-		return newPacket(ptype, v.Bytes())
+		return newPacket(ptype, v.Bytes(), BINARY)
 	case bytes.Buffer:
 		v, _ := any.(bytes.Buffer)
-		return newPacket(ptype, v.Bytes())
+		return newPacket(ptype, v.Bytes(), BINARY)
 	}
 }

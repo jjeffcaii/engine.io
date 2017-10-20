@@ -30,7 +30,7 @@ func (p *binCodec) decode(data []byte) (*Packet, error) {
 	default:
 		return nil, errors.New(fmt.Sprintf("invalid packet type: %d", t))
 	case typeOpen, typeClose, typePing, typePong, typeMessage, typeUpgrade, typeNoop:
-		return newPacket(t, data[1:]), nil
+		return newPacket(t, data[1:], BINARY), nil
 	}
 }
 
@@ -56,7 +56,7 @@ func (p *strCodec) decode(data []byte) (*Packet, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newPacket(t, data[1:]), nil
+	return newPacket(t, data[1:], 0), nil
 }
 
 func (p *strCodec) encode(packet *Packet) ([]byte, error) {
@@ -87,7 +87,7 @@ func (p *b64Codec) decode(data []byte) (*Packet, error) {
 		if err != nil {
 			return nil, err
 		}
-		return newPacket(t, make([]byte, 0)), nil
+		return newPacket(t, make([]byte, 0), BINARY), nil
 	}
 	if data[0] != 'b' {
 		return nil, errors.New(fmt.Sprintf("invalid b64 packet: %s", data))
@@ -97,7 +97,7 @@ func (p *b64Codec) decode(data []byte) (*Packet, error) {
 	} else if data, err := base64.StdEncoding.DecodeString(string(data[2:])); err != nil {
 		return nil, err
 	} else {
-		return newPacket(t, data), nil
+		return newPacket(t, data, BINARY), nil
 	}
 }
 
