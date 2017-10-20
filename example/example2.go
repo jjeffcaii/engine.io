@@ -2,15 +2,15 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
+	"net/http"
 	_ "net/http/pprof"
 
 	eio "github.com/jjeffcaii/engine.io"
-	"net/http"
-	"fmt"
 )
 
-func main() {
+func main2() {
 	flag.Parse()
 	server := eio.NewEngineBuilder().Build()
 
