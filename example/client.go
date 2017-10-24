@@ -44,13 +44,13 @@ func main() {
 		}
 	}()
 
+	c.WriteMessage(websocket.TextMessage, []byte("2aaa"))
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
-
 	for {
 		select {
 		case t := <-ticker.C:
-			err := c.WriteMessage(websocket.TextMessage, []byte(t.String()))
+			err := c.WriteMessage(websocket.TextMessage, []byte("4"+t.String()))
 			if err != nil {
 				log.Println("write:", err)
 			} else {
