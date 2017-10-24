@@ -1,10 +1,16 @@
 package engine_io
 
 type SendOption uint8
+type Transport string
 
 const (
 	BINARY   SendOption = 0x01
 	COMPRESS SendOption = 0x01 << 1
+)
+
+var (
+	POLLING   Transport = "polling"
+	WEBSOCKET Transport = "websocket"
 )
 
 type Engine interface {
@@ -22,9 +28,6 @@ type Socket interface {
 	OnClose(func(reason string)) Socket
 	OnMessage(func(data []byte)) Socket
 	OnError(func(err error)) Socket
-	//OnFlush() Socket
-	//OnDrain() Socket
-	//OnPacket() Socket
 	Send(message interface{}) error
 	SendCustom(message interface{}, options SendOption) error
 	Close()

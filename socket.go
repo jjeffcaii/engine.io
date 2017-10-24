@@ -12,22 +12,71 @@ import (
 )
 
 type socketImpl struct {
+	id         string
 	heart      uint32
-	ctx        *context
-	engine     *engineImpl
 	onMessages []func([]byte)
 	onErrors   []func(err error)
 	onCloses   []func(reason string)
-	outbox     chan *Packet
-	inbox      chan *Packet
+	t          transport
+}
+
+func (p *socketImpl) shit(e interface{}) {
+	if e == nil {
+		return
+	}
+	err, ok := e.(error)
+	if !ok {
+		return
+	}
+	for _, fn := range p.onErrors {
+		go func() {
+			defer func() {
+				ee := recover()
+				if ee != nil {
+					glog.Errorln("handle error failed:", ee)
+				}
+			}()
+			fn(err)
+		}()
+	}
+}
+
+func (p *socketImpl) accept(packet *Packet) error {
+	switch packet.typo {
+	default:
+		return errors.New(fmt.Sprintf("unsupport packet: %d", packet.typo))
+	case typePing:
+		go func() {
+			// refresh heartbeat then pong it.
+			if atomic.LoadUint32(&(p.heart)) != 0 {
+				now := uint32(time.Now().Unix())
+				atomic.StoreUint32(&(p.heart), now)
+			}
+			pong := newPacket(typePong, packet.data, 0)
+			p.t.write(pong)
+		}()
+		break
+	case typeMessage:
+		for _, fn := range p.onMessages {
+			go func() {
+				defer func() {
+					e := recover()
+					p.shit(e)
+				}()
+				fn(packet.data)
+			}()
+		}
+		break
+	}
+	return nil
 }
 
 func (p *socketImpl) Id() string {
-	return p.ctx.sid
+	return p.id
 }
 
 func (p *socketImpl) Server() Engine {
-	return p.engine
+	return p.t.getEngine()
 }
 
 func (p *socketImpl) OnClose(handler func(reason string)) Socket {
@@ -51,21 +100,11 @@ func (p *socketImpl) Send(message interface{}) error {
 
 func (p *socketImpl) SendCustom(message interface{}, options SendOption) error {
 	if atomic.LoadUint32(&(p.heart)) == 0 {
-		return errors.New(fmt.Sprintf("socket#%s is closed", p.ctx.sid))
+		return errors.New(fmt.Sprintf("socket#%s is closed", p.id))
 	}
-	var err error = nil
-	func() {
-		defer func() {
-			e := recover()
-			if v, ok := e.(error); ok {
-				err = v
-			}
-		}()
-		packet := newPacketAuto(typeMessage, message)
-		packet.option |= options
-		p.outbox <- packet
-	}()
-	return err
+	packet := newPacketAuto(typeMessage, message)
+	packet.option |= options
+	return p.t.write(packet)
 }
 
 func (p *socketImpl) Close() {
@@ -73,66 +112,30 @@ func (p *socketImpl) Close() {
 		return
 	}
 	atomic.StoreUint32(&(p.heart), 0)
-	// close socket
-	close(p.inbox)
-	close(p.outbox)
-	p.engine.removeSocket(p)
+	var reason string
+	if err := p.t.close(); err != nil {
+		reason = err.Error()
+	}
+	p.t.getEngine().removeSocket(p)
 	for _, fn := range p.onCloses {
-		// TODO: support close reason.
-		go fn("")
+		go fn(reason)
 	}
 }
 
-func now() uint32 {
-	return uint32(time.Now().Unix())
-}
-
-func (p *socketImpl) fire() {
-	go func() {
-		for packet := range p.inbox {
-			switch packet.typo {
-			case typePing:
-				// refresh heartbeat then pong it.
-				if atomic.LoadUint32(&(p.heart)) != 0 {
-					atomic.StoreUint32(&(p.heart), now())
-				}
-				pong := newPacket(typePong, packet.data, 0)
-				p.outbox <- pong
-				break
-			case typeMessage:
-				for _, fn := range p.onMessages {
-					go func() {
-						defer func() {
-							e := recover()
-							if e != nil {
-								glog.Errorln("handle message failed:", e)
-							}
-						}()
-						fn(packet.data)
-					}()
-				}
-				break
-			default:
-				break
-			}
-		}
-	}()
-}
-
 func (p *socketImpl) isLost() bool {
-	d := 1000 * (now() - atomic.LoadUint32(&(p.heart)))
-	return d > p.engine.options.pingTimeout
+	now := uint32(time.Now().Unix())
+	d := 1000 * (now - atomic.LoadUint32(&(p.heart)))
+	return d > p.t.getEngine().options.pingTimeout
 }
 
-func newSocket(ctx *context, engine *engineImpl, isize int, osize int) *socketImpl {
+func newSocket(id string, transport transport) *socketImpl {
+	now := uint32(time.Now().Unix())
 	socket := socketImpl{
-		heart:      now(),
-		ctx:        ctx,
-		engine:     engine,
-		inbox:      make(chan *Packet, isize),
-		outbox:     make(chan *Packet, osize),
+		id:         id,
+		heart:      now,
 		onMessages: make([]func([]byte), 0),
 		onErrors:   make([]func(error), 0),
+		t:          transport,
 	}
 	return &socket
 }

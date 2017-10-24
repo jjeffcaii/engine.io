@@ -1,21 +1,17 @@
 package engine_io
 
 import (
-	"bytes"
-	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
-	"math/rand"
+	"strings"
 
 	"github.com/golang/glog"
+	"github.com/orcaman/concurrent-map"
 )
 
 var (
@@ -23,24 +19,14 @@ var (
 		n uint8
 		s string
 	}{3, "3",}
-	transportWebsocket = "websocket"
-	transportPolling   = "polling"
 )
 
 type context struct {
-	transport string
-	sid       string
-	binary    bool
-	t         string
-	req       *http.Request
-	res       http.ResponseWriter
-}
-
-type initMsg struct {
-	Sid          string   `json:"sid"`
-	Upgrades     []string `json:"upgrades"`
-	PingInterval uint32   `json:"pingInterval"`
-	PingTimeout  uint32   `json:"pingTimeout"`
+	sid    string
+	binary bool
+	t      string
+	req    *http.Request
+	res    http.ResponseWriter
 }
 
 type engineOptions struct {
@@ -55,54 +41,35 @@ type engineError struct {
 	Message string `json:"message"`
 }
 
-type transport interface {
-	transport(ctx *context) error
-}
-
 type engineImpl struct {
-	sequence   uint32
-	path       string
-	options    *engineOptions
-	onSockets  []func(Socket)
-	sockets    map[string]*socketImpl
-	locker     *sync.RWMutex
-	transports map[string]transport
-	sidGen     func(seq uint32) string
-}
-
-func (p *engineImpl) generateId() string {
-	return p.sidGen(atomic.AddUint32(&(p.sequence), 1))
+	sidGen    func(seq uint32) string
+	sequence  uint32
+	path      string
+	options   *engineOptions
+	onSockets []func(Socket)
+	sockets   cmap.ConcurrentMap
 }
 
 func (p *engineImpl) Listen(addr string) error {
-	http.HandleFunc(p.path, func(writer http.ResponseWriter, request *http.Request) {
+	router := func(writer http.ResponseWriter, request *http.Request) {
 		query := request.URL.Query()
-		isValidContext := true
-		if query.Get("EIO") != protocolVersion.s {
-			isValidContext = false
+		eio := query.Get("EIO")
+		if eio != protocolVersion.s {
+			panic(errors.New(fmt.Sprintf("illegal protocol version: EIO=%s", eio)))
 		}
-		if len(query.Get("transport")) < 1 {
-			isValidContext = false
-		}
-		if !isValidContext {
-			writer.WriteHeader(http.StatusBadRequest)
-			writer.Header().Set("Content-Type", "application/json")
-			e := engineError{Code: 0, Message: "Transport unknown"}
-			bs, _ := json.Marshal(&e)
-			writer.Write(bs)
-			return
+		var qSid, qTp = query.Get("sid"), query.Get("transport")
+		var tp transport
+		var err error
+
+		if len(qSid) < 1 {
+			tp, err = newTransport(p, qTp)
+		} else if socket, ok := p.getSocket(qSid); ok {
+			tp = socket.t
+		} else {
+			err = errors.New(fmt.Sprintf("no such socket#%s", qSid))
 		}
 
-		ctx := context{
-			sid:       query.Get("sid"),
-			transport: query.Get("transport"),
-			binary:    query.Get("b64") == "1",
-			t:         query.Get("t"),
-			req:       request,
-			res:       writer,
-		}
-		trans, ok := p.transports[ctx.transport]
-		if !ok {
+		if err != nil {
 			writer.WriteHeader(http.StatusBadRequest)
 			writer.Header().Set("Content-Type", "application/json")
 			e := engineError{Code: 0, Message: "Transport unknown"}
@@ -110,8 +77,16 @@ func (p *engineImpl) Listen(addr string) error {
 			writer.Write(bs)
 			return
 		}
-		trans.transport(&ctx)
-	})
+		ctx := context{
+			sid:    qSid,
+			binary: query.Get("b64") == "1",
+			req:    request,
+			res:    writer,
+		}
+		tp.transport(&ctx)
+	}
+
+	http.HandleFunc(p.path, router)
 
 	// cron: check and kill lost socket.
 	tick := time.NewTicker(time.Millisecond * time.Duration(p.options.pingInterval))
@@ -122,16 +97,19 @@ func (p *engineImpl) Listen(addr string) error {
 			select {
 			case <-tick.C:
 				losts := make([]*socketImpl, 0)
-				p.locker.RLock()
-				for _, v := range p.sockets {
-					if v.isLost() {
-						glog.Warningln("********* find a lost socket:", v.Id())
-						losts = append(losts, v)
+				for entry := range p.sockets.IterBuffered() {
+					it := entry.Val.(*socketImpl)
+					if it.isLost() {
+						losts = append(losts, it)
 					}
 				}
-				p.locker.RUnlock()
-				for _, it := range losts {
-					it.Close()
+				if len(losts) > 0 {
+					lostIds := make([]string, 0)
+					for _, it := range losts {
+						it.Close()
+						lostIds = append(lostIds, it.id)
+					}
+					glog.Infof("***** kill %d DEAD sockets: %s *****\n", len(losts), strings.Join(lostIds, ","))
 				}
 				break
 			case <-quit:
@@ -150,18 +128,14 @@ func (p *engineImpl) GetProtocol() uint8 {
 
 func (p *engineImpl) GetClients() map[string]Socket {
 	snapshot := make(map[string]Socket)
-	p.locker.RLock()
-	for k, v := range p.sockets {
-		snapshot[k] = v
+	for entry := range p.sockets.IterBuffered() {
+		snapshot[entry.Key] = entry.Val.(Socket)
 	}
-	p.locker.RUnlock()
 	return snapshot
 }
 
 func (p *engineImpl) CountClients() int {
-	p.locker.RLock()
-	defer p.locker.RUnlock()
-	return len(p.sockets)
+	return p.sockets.Count()
 }
 
 func (p *engineImpl) OnConnect(onConn func(socket Socket)) Engine {
@@ -170,34 +144,30 @@ func (p *engineImpl) OnConnect(onConn func(socket Socket)) Engine {
 }
 
 func (p *engineImpl) removeSocket(socket *socketImpl) {
-	p.locker.Lock()
-	delete(p.sockets, socket.Id())
-	p.locker.Unlock()
+	p.sockets.Remove(socket.id)
+}
+
+func (p *engineImpl) generateId() string {
+	return p.sidGen(atomic.AddUint32(&(p.sequence), 1))
 }
 
 func (p *engineImpl) putSocket(socket *socketImpl) {
-	sid := socket.Id()
-	p.locker.Lock()
-	defer p.locker.Unlock()
-	if _, ok := p.sockets[sid]; ok {
+	sid := socket.id
+	if !p.sockets.SetIfAbsent(sid, socket) {
 		panic(errors.New(fmt.Sprintf("socket#%s exists already", sid)))
-	} else {
-		p.sockets[sid] = socket
 	}
 }
 
-func (p *engineImpl) getSocket(id string) *socketImpl {
-	p.locker.RLock()
-	socket := p.sockets[id]
-	p.locker.RUnlock()
-	return socket
+func (p *engineImpl) getSocket(id string) (*socketImpl, bool) {
+	if socket, ok := p.sockets.Get(id); ok {
+		return socket.(*socketImpl), ok
+	} else {
+		return nil, ok
+	}
 }
 
 func (p *engineImpl) hasSocket(id string) bool {
-	p.locker.RLock()
-	_, ok := p.sockets[id]
-	p.locker.RUnlock()
-	return ok
+	return p.sockets.Has(id)
 }
 
 type engineBuilder struct {
@@ -236,34 +206,13 @@ func (p *engineBuilder) Build() Engine {
 		return origin
 	}(*p.options)
 	eng := &engineImpl{
-		onSockets:  make([]func(Socket), 0),
-		options:    &clone,
-		sockets:    make(map[string]*socketImpl, 0),
-		locker:     new(sync.RWMutex),
-		transports: make(map[string]transport, 0),
-		path:       p.path,
-		sidGen:     p.gen,
+		onSockets: make([]func(Socket), 0),
+		options:   &clone,
+		sockets:   cmap.New(),
+		path:      p.path,
+		sidGen:    p.gen,
 	}
-	eng.transports[transportWebsocket] = newWebsocketTransport(eng)
-	eng.transports[transportPolling] = newXhrTransport(eng)
 	return eng
-}
-
-func defaultIdGen(seed uint32) string {
-	bf := new(bytes.Buffer)
-	for i := 0; i < 12; i++ {
-		bf.WriteByte(byte(rand.Int31n(256)))
-	}
-	b := make([]byte, 4)
-	binary.BigEndian.PutUint32(b, seed)
-	for i := 1; i < 4; i++ {
-		bf.WriteByte(b[i])
-	}
-	bs := bf.Bytes()
-	s := base64.StdEncoding.EncodeToString(bs)
-	s = strings.Replace(s, "/", "_", -1)
-	s = strings.Replace(s, "+", "-", -1)
-	return s
 }
 
 func NewEngineBuilder() *engineBuilder {
@@ -276,7 +225,7 @@ func NewEngineBuilder() *engineBuilder {
 	builder := engineBuilder{
 		path:    "/engine.io/",
 		options: &options,
-		gen:     defaultIdGen,
+		gen:     randomSessionId,
 	}
 	return &builder
 }
