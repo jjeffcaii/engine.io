@@ -42,16 +42,19 @@ type engineError struct {
 }
 
 type engineImpl struct {
-	sidGen    func(seq uint32) string
-	sequence  uint32
-	path      string
-	options   *engineOptions
-	onSockets []func(Socket)
-	sockets   cmap.ConcurrentMap
+	sidGen     func(seq uint32) string
+	sequence   uint32
+	path       string
+	options    *engineOptions
+	onSockets  []func(Socket)
+	sockets    cmap.ConcurrentMap
+	junkKiller chan struct{}
+	junkTicker *time.Ticker
 }
 
-func (p *engineImpl) Listen(addr string) error {
-	router := func(writer http.ResponseWriter, request *http.Request) {
+func (p *engineImpl) Router() func(w http.ResponseWriter, r *http.Request) {
+	p.ensureCleaner()
+	return func(writer http.ResponseWriter, request *http.Request) {
 		query := request.URL.Query()
 		eio := query.Get("EIO")
 		if eio != protocolVersion.s {
@@ -85,40 +88,14 @@ func (p *engineImpl) Listen(addr string) error {
 		}
 		tp.transport(&ctx)
 	}
+}
 
-	http.HandleFunc(p.path, router)
+func (p *engineImpl) Close() {
+	close(p.junkKiller)
+}
 
-	// cron: check and kill lost socket.
-	tick := time.NewTicker(time.Millisecond * time.Duration(p.options.pingInterval))
-	quit := make(chan uint8)
-	defer close(quit)
-	go func() {
-		for {
-			select {
-			case <-tick.C:
-				losts := make([]*socketImpl, 0)
-				for entry := range p.sockets.IterBuffered() {
-					it := entry.Val.(*socketImpl)
-					if it.isLost() {
-						losts = append(losts, it)
-					}
-				}
-				if len(losts) > 0 {
-					lostIds := make([]string, 0)
-					for _, it := range losts {
-						it.Close()
-						lostIds = append(lostIds, it.id)
-					}
-					glog.Infof("***** kill %d DEAD sockets: %s *****\n", len(losts), strings.Join(lostIds, ","))
-				}
-				break
-			case <-quit:
-				tick.Stop()
-				return
-			}
-		}
-	}()
-
+func (p *engineImpl) Listen(addr string) error {
+	http.HandleFunc(p.path, p.Router())
 	return http.ListenAndServe(addr, nil)
 }
 
@@ -170,6 +147,40 @@ func (p *engineImpl) hasSocket(id string) bool {
 	return p.sockets.Has(id)
 }
 
+func (p *engineImpl) ensureCleaner() {
+	if p.junkTicker != nil {
+		return
+	}
+	p.junkTicker = time.NewTicker(time.Millisecond * time.Duration(p.options.pingInterval))
+	// cron: check and kill lost socket.
+	go func() {
+		for {
+			select {
+			case <-p.junkTicker.C:
+				losts := make([]*socketImpl, 0)
+				for entry := range p.sockets.IterBuffered() {
+					it := entry.Val.(*socketImpl)
+					if it.isLost() {
+						losts = append(losts, it)
+					}
+				}
+				if len(losts) > 0 {
+					lostIds := make([]string, 0)
+					for _, it := range losts {
+						it.Close()
+						lostIds = append(lostIds, it.id)
+					}
+					glog.Infof("***** kill %d DEAD sockets: %s *****\n", len(losts), strings.Join(lostIds, ","))
+				}
+				break
+			case <-p.junkKiller:
+				p.junkTicker.Stop()
+				return
+			}
+		}
+	}()
+}
+
 type engineBuilder struct {
 	options *engineOptions
 	path    string
@@ -206,11 +217,13 @@ func (p *engineBuilder) Build() Engine {
 		return origin
 	}(*p.options)
 	eng := &engineImpl{
-		onSockets: make([]func(Socket), 0),
-		options:   &clone,
-		sockets:   cmap.New(),
-		path:      p.path,
-		sidGen:    p.gen,
+		onSockets:  make([]func(Socket), 0),
+		options:    &clone,
+		sockets:    cmap.New(),
+		path:       p.path,
+		sidGen:     p.gen,
+		junkKiller: make(chan struct{}),
+		junkTicker: nil,
 	}
 	return eng
 }
@@ -223,7 +236,7 @@ func NewEngineBuilder() *engineBuilder {
 		allowUpgrades: true,
 	}
 	builder := engineBuilder{
-		path:    "/engine.io/",
+		path:    DEFAULT_PATH,
 		options: &options,
 		gen:     randomSessionId,
 	}

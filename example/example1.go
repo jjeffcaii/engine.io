@@ -37,6 +37,7 @@ func main() {
 
 	defer func() {
 		close(kill)
+		server.Close()
 	}()
 
 	server.OnConnect(func(socket eio.Socket) {
@@ -50,10 +51,10 @@ func main() {
 		})
 	})
 
+	http.HandleFunc(eio.DEFAULT_PATH, server.Router())
 	http.HandleFunc("/conns", func(writer http.ResponseWriter, request *http.Request) {
 		writer.WriteHeader(http.StatusOK)
 		writer.Write([]byte(fmt.Sprintf("totals: %d", server.CountClients())))
 	})
-
-	log.Fatalln(server.Listen(":3000"))
+	log.Fatalln(http.ListenAndServe(":3000", nil))
 }
