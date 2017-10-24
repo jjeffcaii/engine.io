@@ -28,3 +28,4 @@ func TestPayload(t *testing.T) {
 		fmt.Printf("type=%d, data=%s\n", p.typo, p.data)
 	}
 }
+
