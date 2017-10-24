@@ -32,6 +32,7 @@ type Socket interface {
 	OnClose(func(reason string)) Socket
 	OnMessage(func(data []byte)) Socket
 	OnError(func(err error)) Socket
+	OnUpgrade(func()) Socket
 	Send(message interface{}) error
 	SendCustom(message interface{}, options SendOption) error
 	Close()

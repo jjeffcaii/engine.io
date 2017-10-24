@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
+	"sync"
 	"time"
 
-	"sync"
-
-	"io"
+	"github.com/golang/glog"
 )
 
 type xhrTransport struct {
@@ -27,6 +27,12 @@ type xhrTransport struct {
 func (p *xhrTransport) setSocket(socket *socketImpl) {
 	p.locker.Lock()
 	p.sk = socket
+	p.locker.Unlock()
+}
+
+func (p *xhrTransport) clearSocket() {
+	p.locker.Lock()
+	p.sk = nil
 	p.locker.Unlock()
 }
 
@@ -86,11 +92,7 @@ func (p *xhrTransport) flush() error {
 			queue = append(queue, pk)
 			break
 		case <-time.After(time.Millisecond * time.Duration(p.eng.options.pingTimeout)):
-			kill := Packet{
-				typo: typeClose,
-				data: make([]byte, 0),
-			}
-			queue = append(queue, &kill)
+			queue = append(queue, newPacket(typeClose, make([]byte, 0), 0))
 			quit = true
 			break
 		}
@@ -106,9 +108,13 @@ func (p *xhrTransport) flush() error {
 	}
 }
 
-func (p *xhrTransport) upgrade() (transport, error) {
-	// TODO: do upgrade
-	return nil, errors.New("TODO")
+func (p *xhrTransport) upgrading() error {
+	return nil
+}
+
+func (p *xhrTransport) upgrade() error {
+	p.write(newPacket(typeNoop, make([]byte, 0), 0))
+	return nil
 }
 
 func (p *xhrTransport) close() error {
@@ -122,6 +128,7 @@ func (p *xhrTransport) close() error {
 		}()
 		close(p.outbox)
 	}()
+	glog.Infoln("close xhr transport")
 	return err
 }
 
@@ -143,7 +150,10 @@ func (p *xhrTransport) transport(ctx *context) error {
 	case http.MethodGet:
 		err := p.doGet(ctx)
 		if err == io.ErrUnexpectedEOF {
-			p.getSocket().Close()
+			k := p.getSocket()
+			if k != nil {
+				k.Close()
+			}
 		}
 		return err
 	case http.MethodPost:
@@ -167,22 +177,22 @@ func (p *xhrTransport) doPost(ctx *context) error {
 			ctx.res.Write(bs)
 		}
 	}()
-
 	if body, err := ioutil.ReadAll(ctx.req.Body); err != nil {
 		ex = err
 	} else if packets, err := payloader.decode(body); err != nil {
 		ex = err
 	} else {
 		socket := p.getSocket()
-		for _, pack := range packets {
-			if err := socket.accept(pack); err != nil {
-				ex = err
-				break
+		if socket != nil {
+			for _, pack := range packets {
+				if err := socket.accept(pack); err != nil {
+					ex = err
+					break
+				}
 			}
 		}
 	}
 	return ex
-
 }
 
 func (p *xhrTransport) doGet(ctx *context) error {
