@@ -23,7 +23,6 @@ type transport interface {
 	flush() error
 	close() error
 	getEngine() *engineImpl
-	upgrading() error
 	upgrade() error
 }
 

@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/glog"
 	"github.com/jjeffcaii/engine.io/parser"
 )
 
@@ -66,6 +65,7 @@ func (p *xhrTransport) flush() error {
 	ctx := p.ctx
 	closeNotifier := ctx.res.(http.CloseNotifier)
 	queue := make([]*parser.Packet, 0)
+
 	// 1. check current packets inbox chan buffer.
 	end := false
 	for {
@@ -109,10 +109,6 @@ func (p *xhrTransport) flush() error {
 	}
 }
 
-func (p *xhrTransport) upgrading() error {
-	return nil
-}
-
 func (p *xhrTransport) upgrade() error {
 	p.write(parser.NewPacketCustom(parser.NOOP, make([]byte, 0), 0))
 	return nil
@@ -129,7 +125,6 @@ func (p *xhrTransport) close() error {
 		}()
 		close(p.outbox)
 	}()
-	glog.Infoln("close xhr transport")
 	return err
 }
 

@@ -95,12 +95,8 @@ func (p *wsTransport) isUpgradable() bool {
 	return false
 }
 
-func (p *wsTransport) upgrading() error {
-	return nil
-}
-
 func (p *wsTransport) upgrade() error {
-	return nil
+	return errors.New("websocket transport doesn't support upgrade")
 }
 
 func (p *wsTransport) transport(ctx *context) error {
@@ -111,8 +107,6 @@ func (p *wsTransport) transport(ctx *context) error {
 		ctx.sid = p.eng.generateId()
 		socket = newSocket(ctx.sid, p)
 	} else if it, ok := p.eng.getSocket(ctx.sid); ok {
-		old := it.getFirstTransport()
-		old.upgrading()
 		it.setTransport(p)
 		socket = it
 	} else {

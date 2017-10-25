@@ -102,9 +102,7 @@ func (p *engineImpl) Router() func(w http.ResponseWriter, r *http.Request) {
 			req:    request,
 			res:    writer,
 		}
-		if err := tp.transport(&ctx); err != nil {
-			glog.Errorln(err)
-		}
+		tp.transport(&ctx)
 	}
 }
 

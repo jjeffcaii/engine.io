@@ -70,7 +70,6 @@ func TestEcho(t *testing.T) {
 	server.OnConnect(func(socket eio.Socket) {
 		log.Println("========> socket connect:", socket.Id())
 		socket.OnMessage(func(data []byte) {
-			log.Printf("got string data: %+v\n", data)
 			socket.Send(fmt.Sprintf("ECHO1: %s", data))
 			socket.Send(fmt.Sprintf("ECHO2: %s", data))
 		})
