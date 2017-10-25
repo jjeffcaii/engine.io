@@ -2,26 +2,24 @@ package engine_io
 
 import (
 	"errors"
+	"fmt"
+	"sync"
+	"sync/atomic"
 	"time"
 
-	"fmt"
-
-	"sync/atomic"
-
-	"sync"
-
 	"github.com/golang/glog"
+	"github.com/jjeffcaii/engine.io/parser"
 )
 
 type socketImpl struct {
-	id         string
-	heart      uint32
-	onMessages []func([]byte)
-	onUpgrades []func()
-	onErrors   []func(err error)
-	onCloses   []func(reason string)
-	locker     *sync.RWMutex
-	transports []transport
+	id              string
+	heart           uint32
+	msgHanders      []func([]byte)
+	upgradeHandlers []func()
+	errorHandlers   []func(err error)
+	closeHandlers   []func(reason string)
+	locker          *sync.RWMutex
+	transports      []transport
 }
 
 func (p *socketImpl) clearTransports() {
@@ -63,7 +61,7 @@ func (p *socketImpl) shit(e interface{}) {
 	if !ok {
 		return
 	}
-	for _, fn := range p.onErrors {
+	for _, fn := range p.errorHandlers {
 		go func() {
 			defer func() {
 				ee := recover()
@@ -76,39 +74,39 @@ func (p *socketImpl) shit(e interface{}) {
 	}
 }
 
-func (p *socketImpl) accept(packet *Packet) error {
-	switch packet.typo {
+func (p *socketImpl) accept(packet *parser.Packet) error {
+	switch packet.Type {
 	default:
-		return errors.New(fmt.Sprintf("unsupport packet: %d", packet.typo))
-	case typeClose:
+		return errors.New(fmt.Sprintf("unsupport packet: %d", packet.Type))
+	case parser.CLOSE:
 		p.Close()
 		break
-	case typeUpgrade:
-		if p.onUpgrades != nil {
-			for _, fn := range p.onUpgrades {
+	case parser.UPGRADE:
+		if p.upgradeHandlers != nil {
+			for _, fn := range p.upgradeHandlers {
 				go fn()
 			}
 		}
 		break
-	case typePing:
+	case parser.PING:
 		go func() {
 			// refresh heartbeat then pong it.
 			if atomic.LoadUint32(&(p.heart)) != 0 {
 				now := uint32(time.Now().Unix())
 				atomic.StoreUint32(&(p.heart), now)
 			}
-			pong := newPacket(typePong, packet.data, 0)
+			pong := parser.NewPacketCustom(parser.PONG, packet.Data, 0)
 			p.getTransport().write(pong)
 		}()
 		break
-	case typeMessage:
-		for _, fn := range p.onMessages {
+	case parser.MESSAGE:
+		for _, fn := range p.msgHanders {
 			go func() {
 				defer func() {
 					e := recover()
 					p.shit(e)
 				}()
-				fn(packet.data)
+				fn(packet.Data)
 			}()
 		}
 		break
@@ -125,22 +123,22 @@ func (p *socketImpl) Server() Engine {
 }
 
 func (p *socketImpl) OnClose(handler func(reason string)) Socket {
-	p.onCloses = append(p.onCloses, handler)
+	p.closeHandlers = append(p.closeHandlers, handler)
 	return p
 }
 
 func (p *socketImpl) OnMessage(handler func(data []byte)) Socket {
-	p.onMessages = append(p.onMessages, handler)
+	p.msgHanders = append(p.msgHanders, handler)
 	return p
 }
 
 func (p *socketImpl) OnError(handler func(err error)) Socket {
-	p.onErrors = append(p.onErrors, handler)
+	p.errorHandlers = append(p.errorHandlers, handler)
 	return p
 }
 
 func (p *socketImpl) OnUpgrade(handler func()) Socket {
-	p.onUpgrades = append(p.onUpgrades, handler)
+	p.upgradeHandlers = append(p.upgradeHandlers, handler)
 	return p
 }
 
@@ -148,12 +146,12 @@ func (p *socketImpl) Send(message interface{}) error {
 	return p.SendCustom(message, 0)
 }
 
-func (p *socketImpl) SendCustom(message interface{}, options SendOption) error {
+func (p *socketImpl) SendCustom(message interface{}, options parser.PacketOption) error {
 	if atomic.LoadUint32(&(p.heart)) == 0 {
 		return errors.New(fmt.Sprintf("socket#%s is closed", p.id))
 	}
-	packet := newPacketAuto(typeMessage, message)
-	packet.option |= options
+	packet := parser.NewPacketAuto(parser.MESSAGE, message)
+	packet.Option |= options
 	return p.getTransport().write(packet)
 }
 
@@ -168,7 +166,7 @@ func (p *socketImpl) Close() {
 		reason = err.Error()
 	}
 	t.getEngine().removeSocket(p)
-	for _, fn := range p.onCloses {
+	for _, fn := range p.closeHandlers {
 		go fn(reason)
 	}
 }
@@ -182,13 +180,13 @@ func (p *socketImpl) isLost() bool {
 func newSocket(id string, t transport) *socketImpl {
 	now := uint32(time.Now().Unix())
 	socket := socketImpl{
-		id:         id,
-		heart:      now,
-		onUpgrades: make([]func(), 0),
-		onMessages: make([]func([]byte), 0),
-		onErrors:   make([]func(error), 0),
-		locker:     new(sync.RWMutex),
-		transports: []transport{t},
+		id:              id,
+		heart:           now,
+		upgradeHandlers: make([]func(), 0),
+		msgHanders:      make([]func([]byte), 0),
+		errorHandlers:   make([]func(error), 0),
+		locker:          new(sync.RWMutex),
+		transports:      []transport{t},
 	}
 	return &socket
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/jjeffcaii/engine.io/parser"
 )
 
 type xhrTransport struct {
@@ -18,7 +19,7 @@ type xhrTransport struct {
 	sk          *socketImpl
 	pollingTime time.Duration
 	ctx         *context
-	outbox      chan *Packet
+	outbox      chan *parser.Packet
 	onFlush     func()
 	onWrite     func()
 	locker      *sync.RWMutex
@@ -46,7 +47,7 @@ func (p *xhrTransport) getSocket() *socketImpl {
 	return socket
 }
 
-func (p *xhrTransport) write(packet *Packet) error {
+func (p *xhrTransport) write(packet *parser.Packet) error {
 	defer func() {
 		if p.onWrite != nil {
 			p.onWrite()
@@ -64,7 +65,7 @@ func (p *xhrTransport) flush() error {
 	}()
 	ctx := p.ctx
 	closeNotifier := ctx.res.(http.CloseNotifier)
-	queue := make([]*Packet, 0)
+	queue := make([]*parser.Packet, 0)
 	// 1. check current packets inbox chan buffer.
 	end := false
 	for {
@@ -85,19 +86,19 @@ func (p *xhrTransport) flush() error {
 	if len(queue) < 1 {
 		select {
 		case <-closeNotifier.CloseNotify():
-			queue = append(queue, newPacket(typeClose, make([]byte, 0), 0))
+			queue = append(queue, parser.NewPacketCustom(parser.CLOSE, make([]byte, 0), 0))
 			quit = true
 			break
 		case pk := <-p.outbox:
 			queue = append(queue, pk)
 			break
 		case <-time.After(time.Millisecond * time.Duration(p.eng.options.pingTimeout)):
-			queue = append(queue, newPacket(typeClose, make([]byte, 0), 0))
+			queue = append(queue, parser.NewPacketCustom(parser.CLOSE, make([]byte, 0), 0))
 			quit = true
 			break
 		}
 	}
-	if bs, err := payloader.encode(queue...); err != nil {
+	if bs, err := parser.Payload.Encode(queue...); err != nil {
 		return err
 	} else if _, err := ctx.res.Write(bs); err != nil {
 		return err
@@ -113,7 +114,7 @@ func (p *xhrTransport) upgrading() error {
 }
 
 func (p *xhrTransport) upgrade() error {
-	p.write(newPacket(typeNoop, make([]byte, 0), 0))
+	p.write(parser.NewPacketCustom(parser.NOOP, make([]byte, 0), 0))
 	return nil
 }
 
@@ -179,7 +180,7 @@ func (p *xhrTransport) doPost(ctx *context) error {
 	}()
 	if body, err := ioutil.ReadAll(ctx.req.Body); err != nil {
 		ex = err
-	} else if packets, err := payloader.decode(body); err != nil {
+	} else if packets, err := parser.Payload.Decode(body); err != nil {
 		ex = err
 	} else {
 		socket := p.getSocket()
@@ -229,13 +230,13 @@ func (p *xhrTransport) asNewborn(ctx *context) error {
 	if p.eng.options.allowUpgrades {
 		okMsg.Upgrades = append(okMsg.Upgrades, WEBSOCKET)
 	}
-	return p.write(newPacketByJSON(typeOpen, &okMsg))
+	return p.write(parser.NewPacketByJSON(parser.OPEN, &okMsg))
 }
 
 func newXhrTransport(server *engineImpl) transport {
 	trans := xhrTransport{
 		eng:    server,
-		outbox: make(chan *Packet, 1024),
+		outbox: make(chan *parser.Packet, 1024),
 		locker: new(sync.RWMutex),
 	}
 	return &trans

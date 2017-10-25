@@ -1,14 +1,12 @@
 package engine_io
 
-import "net/http"
+import (
+	"net/http"
 
-type SendOption uint8
-type Transport string
-
-const (
-	BINARY   SendOption = 0x01
-	COMPRESS SendOption = 0x01 << 1
+	"github.com/jjeffcaii/engine.io/parser"
 )
+
+type Transport string
 
 var (
 	DEFAULT_PATH string    = "/engine.io/"
@@ -34,6 +32,6 @@ type Socket interface {
 	OnError(func(err error)) Socket
 	OnUpgrade(func()) Socket
 	Send(message interface{}) error
-	SendCustom(message interface{}, options SendOption) error
+	SendCustom(message interface{}, options parser.PacketOption) error
 	Close()
 }

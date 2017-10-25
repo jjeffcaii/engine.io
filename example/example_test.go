@@ -33,6 +33,10 @@ func TestNothing(t *testing.T) {
 			// do nothing.
 			log.Println("===> got message:", string(data))
 		})
+		var c int
+		socket.OnMessage(func(data []byte) {
+			c++
+		})
 		socket.OnClose(func(reason string) {
 			log.Println("========> socket closed:", socket.Id())
 		})
