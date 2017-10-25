@@ -1,4 +1,4 @@
-package example
+package engine_io
 
 import (
 	"flag"
