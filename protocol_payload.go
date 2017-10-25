@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"log"
 	"strconv"
 
 	_ "github.com/golang/glog"
@@ -47,8 +46,10 @@ func (p *stdPayloadCodec) encode(packets ...*Packet) ([]byte, error) {
 }
 
 func (p *stdPayloadCodec) decode(input []byte) ([]*Packet, error) {
-	log.Println(string(input))
+	//log.Println(string(input))
 
+	// 7:4你好,世界!
+	// 7:4abcdef1:3
 	totals := len(input)
 	if totals < 1 {
 		return nil, errors.New("payload is empty")

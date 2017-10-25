@@ -1,4 +1,4 @@
-package main
+package example
 
 import (
 	"flag"
@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"testing"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -13,15 +14,17 @@ import (
 
 var addr = flag.String("addr", "localhost:3000", "http service address")
 
-func main() {
+func init() {
 	flag.Parse()
 	log.SetFlags(0)
+}
 
+func TestClient(t *testing.T) {
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
 
 	u := url.URL{Scheme: "ws", Host: *addr, Path: "/engine.io/", RawQuery: "transport=websocket&EIO=3"}
-	log.Printf("connecting to %s", u.String())
+	log.Printf("connecting to %s\n", u.String())
 
 	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
@@ -40,7 +43,7 @@ func main() {
 				log.Println("Read:", err)
 				return
 			}
-			log.Println("recv: %s", string(message))
+			log.Printf("recv: %s\n", string(message))
 		}
 	}()
 
@@ -54,7 +57,7 @@ func main() {
 			if err != nil {
 				log.Println("write:", err)
 			} else {
-				log.Println("write: %s", t.String())
+				log.Printf("write: %s\n", t.String())
 			}
 		case <-interrupt:
 			log.Println("interrupt")
