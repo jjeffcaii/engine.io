@@ -3,6 +3,8 @@ package engine_io
 import (
 	"errors"
 	"fmt"
+
+	"github.com/jjeffcaii/engine.io/parser"
 )
 
 type messageOK struct {
@@ -17,11 +19,10 @@ type transport interface {
 	//OnDrain() Socket
 	//OnPacket() Socket
 	transport(ctx *context) error
-	write(packet *Packet) error
+	write(packet *parser.Packet) error
 	flush() error
 	close() error
 	getEngine() *engineImpl
-	upgrading() error
 	upgrade() error
 }
 

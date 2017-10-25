@@ -9,4 +9,4 @@ before_install:
   - dep ensure
 
 script:
-  - go test
+  - go test ./parser -v

@@ -1,4 +1,4 @@
-package engine_io
+package parser
 
 import (
 	"bytes"
@@ -25,20 +25,20 @@ func (p *binCodec) decode(data []byte) (*Packet, error) {
 	if data == nil || len(data) < 1 {
 		return nil, errors.New("packet bytes is empty")
 	}
-	t := data[0]
+	t := PacketType(data[0])
 	switch t {
 	default:
 		return nil, errors.New(fmt.Sprintf("invalid packet type: %d", t))
-	case typeOpen, typeClose, typePing, typePong, typeMessage, typeUpgrade, typeNoop:
-		return newPacket(t, data[1:], BINARY), nil
+	case OPEN, CLOSE, PING, PONG, MESSAGE, UPGRADE, NOOP:
+		return NewPacketCustom(t, data[1:], BINARY), nil
 	}
 }
 
 func (p *binCodec) encode(packet *Packet) ([]byte, error) {
 	bf := new(bytes.Buffer)
-	if err := bf.WriteByte(packet.typo); err != nil {
+	if err := bf.WriteByte(byte(packet.Type)); err != nil {
 		return nil, err
-	} else if _, err := bf.Write(packet.data); err != nil {
+	} else if _, err := bf.Write(packet.Data); err != nil {
 		return nil, err
 	} else {
 		return bf.Bytes(), nil
@@ -56,18 +56,18 @@ func (p *strCodec) decode(data []byte) (*Packet, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newPacket(t, data[1:], 0), nil
+	return NewPacketCustom(t, data[1:], 0), nil
 }
 
 func (p *strCodec) encode(packet *Packet) ([]byte, error) {
-	c, err := convertTypeToChar(packet.typo)
+	c, err := convertTypeToChar(packet.Type)
 	if err != nil {
 		return nil, err
 	}
 	bf := new(bytes.Buffer)
 	if err := bf.WriteByte(c); err != nil {
 		return nil, err
-	} else if _, err := bf.Write(packet.data); err != nil {
+	} else if _, err := bf.Write(packet.Data); err != nil {
 		return nil, err
 	} else {
 		return bf.Bytes(), nil
@@ -87,7 +87,7 @@ func (p *b64Codec) decode(data []byte) (*Packet, error) {
 		if err != nil {
 			return nil, err
 		}
-		return newPacket(t, make([]byte, 0), BINARY), nil
+		return NewPacketCustom(t, make([]byte, 0), BINARY), nil
 	}
 	if data[0] != 'b' {
 		return nil, errors.New(fmt.Sprintf("invalid b64 packet: %s", data))
@@ -97,17 +97,17 @@ func (p *b64Codec) decode(data []byte) (*Packet, error) {
 	} else if data, err := base64.StdEncoding.DecodeString(string(data[2:])); err != nil {
 		return nil, err
 	} else {
-		return newPacket(t, data, BINARY), nil
+		return NewPacketCustom(t, data, BINARY), nil
 	}
 }
 
 func (p *b64Codec) encode(packet *Packet) ([]byte, error) {
-	c, err := convertTypeToChar(packet.typo)
+	c, err := convertTypeToChar(packet.Type)
 	if err != nil {
 		return nil, err
 	}
 	bf := new(bytes.Buffer)
-	if packet.data == nil || len(packet.data) < 1 {
+	if packet.Data == nil || len(packet.Data) < 1 {
 		if err := bf.WriteByte(c); err != nil {
 			return nil, err
 		} else {
@@ -120,51 +120,51 @@ func (p *b64Codec) encode(packet *Packet) ([]byte, error) {
 	if err := bf.WriteByte(c); err != nil {
 		return nil, err
 	}
-	body := base64.StdEncoding.EncodeToString(packet.data)
+	body := base64.StdEncoding.EncodeToString(packet.Data)
 	if _, err := bf.WriteString(body); err != nil {
 		return nil, err
 	}
 	return bf.Bytes(), nil
 }
 
-func convertCharToType(c byte) (uint8, error) {
+func convertCharToType(c byte) (PacketType, error) {
 	switch c {
 	default:
 		return 0xff, errors.New(fmt.Sprintf("invalid packet type: %s", c))
 	case '0':
-		return typeOpen, nil
+		return OPEN, nil
 	case '1':
-		return typeClose, nil
+		return CLOSE, nil
 	case '2':
-		return typePing, nil
+		return PING, nil
 	case '3':
-		return typePong, nil
+		return PONG, nil
 	case '4':
-		return typeMessage, nil
+		return MESSAGE, nil
 	case '5':
-		return typeUpgrade, nil
+		return UPGRADE, nil
 	case '6':
-		return typeNoop, nil
+		return NOOP, nil
 	}
 }
 
-func convertTypeToChar(ptype uint8) (byte, error) {
+func convertTypeToChar(ptype PacketType) (byte, error) {
 	switch ptype {
 	default:
 		return 0, errors.New(fmt.Sprintf("invalid packet type: %d", ptype))
-	case typeOpen:
+	case OPEN:
 		return '0', nil
-	case typeClose:
+	case CLOSE:
 		return '1', nil
-	case typePing:
+	case PING:
 		return '2', nil
-	case typePong:
+	case PONG:
 		return '3', nil
-	case typeMessage:
+	case MESSAGE:
 		return '4', nil
-	case typeUpgrade:
+	case UPGRADE:
 		return '5', nil
-	case typeNoop:
+	case NOOP:
 		return '6', nil
 	}
 }

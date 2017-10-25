@@ -10,6 +10,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/gorilla/websocket"
+	"github.com/jjeffcaii/engine.io/parser"
 )
 
 var upgrader *websocket.Upgrader
@@ -41,7 +42,7 @@ func (p *wsTransport) getEngine() *engineImpl {
 	return p.eng
 }
 
-func (p *wsTransport) write(packet *Packet) error {
+func (p *wsTransport) write(packet *parser.Packet) error {
 	defer func() {
 		if p.onWrite != nil {
 			go p.onWrite()
@@ -63,17 +64,14 @@ func (p *wsTransport) flush() error {
 		if !ok {
 			break
 		}
-		out := item.(*Packet)
-		var codec packetCodec
+		out := item.(*parser.Packet)
 		var msgType int
-		if out.option&BINARY == BINARY {
-			codec = binaryEncoder
+		if out.Option&parser.BINARY == parser.BINARY {
 			msgType = websocket.BinaryMessage
 		} else {
-			codec = stringEncoder
 			msgType = websocket.TextMessage
 		}
-		bs, err := codec.encode(out)
+		bs, err := parser.Encode(out)
 		if err != nil {
 			return err
 		}
@@ -83,7 +81,8 @@ func (p *wsTransport) flush() error {
 		if err != nil {
 			return err
 		}
-		if out.typo == typePong && string(out.data) == "probe" {
+		if out.Type == parser.PONG && string(out.Data[:5]) == "probe" {
+			// ensure upgrade
 			time.AfterFunc(100*time.Millisecond, func() {
 				p.socket.getFirstTransport().upgrade()
 			})
@@ -96,12 +95,8 @@ func (p *wsTransport) isUpgradable() bool {
 	return false
 }
 
-func (p *wsTransport) upgrading() error {
-	return nil
-}
-
 func (p *wsTransport) upgrade() error {
-	return nil
+	return errors.New("websocket transport doesn't support upgrade")
 }
 
 func (p *wsTransport) transport(ctx *context) error {
@@ -112,8 +107,6 @@ func (p *wsTransport) transport(ctx *context) error {
 		ctx.sid = p.eng.generateId()
 		socket = newSocket(ctx.sid, p)
 	} else if it, ok := p.eng.getSocket(ctx.sid); ok {
-		old := it.getFirstTransport()
-		old.upgrading()
 		it.setTransport(p)
 		socket = it
 	} else {
@@ -142,7 +135,7 @@ func (p *wsTransport) transport(ctx *context) error {
 
 	// send connect ok.
 	if isNew {
-		msgOpen := newPacketByJSON(typeOpen, &messageOK{
+		msgOpen := parser.NewPacketByJSON(parser.OPEN, &messageOK{
 			Sid:          ctx.sid,
 			Upgrades:     make([]Transport, 0),
 			PingInterval: p.eng.options.pingInterval,
@@ -173,7 +166,7 @@ func (p *wsTransport) foreverRead(socket *socketImpl) error {
 		default:
 			break
 		case websocket.TextMessage:
-			if pack, err := stringEncoder.decode(message); err != nil {
+			if pack, err := parser.Decode(message, 0); err != nil {
 				glog.Errorln("decode packet failed:", err)
 				return err
 			} else if err := socket.accept(pack); err != nil {
@@ -181,7 +174,7 @@ func (p *wsTransport) foreverRead(socket *socketImpl) error {
 			}
 			break
 		case websocket.BinaryMessage:
-			if pack, err := binaryEncoder.decode(message); err != nil {
+			if pack, err := parser.Decode(message, parser.BINARY); err != nil {
 				glog.Errorln("decode packet failed:", err)
 				return err
 			} else if err := socket.accept(pack); err != nil {
