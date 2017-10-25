@@ -1,11 +1,12 @@
 package engine_io
 
 import (
-	"net/http"
-
 	"errors"
-
+	"fmt"
+	"net/http"
 	"sync"
+
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/gorilla/websocket"
@@ -24,15 +25,12 @@ func init() {
 
 type wsTransport struct {
 	eng     *engineImpl
+	socket  *socketImpl
 	connect *websocket.Conn
 	outbox  *queue
 	locker  *sync.Mutex
 	onWrite func()
 	onFlush func()
-}
-
-func (p *wsTransport) upgrade() (transport, error) {
-	return nil, errors.New("cannot upgrade websocket transport")
 }
 
 func (p *wsTransport) close() error {
@@ -67,12 +65,13 @@ func (p *wsTransport) flush() error {
 		}
 		out := item.(*Packet)
 		var codec packetCodec
-		msgType := websocket.TextMessage
+		var msgType int
 		if out.option&BINARY == BINARY {
-			msgType = websocket.BinaryMessage
 			codec = binaryEncoder
+			msgType = websocket.BinaryMessage
 		} else {
 			codec = stringEncoder
+			msgType = websocket.TextMessage
 		}
 		bs, err := codec.encode(out)
 		if err != nil {
@@ -84,11 +83,50 @@ func (p *wsTransport) flush() error {
 		if err != nil {
 			return err
 		}
+		if out.typo == typePong && string(out.data) == "probe" {
+			time.AfterFunc(100*time.Millisecond, func() {
+				p.socket.getFirstTransport().upgrade()
+			})
+		}
 	}
 	return nil
 }
 
+func (p *wsTransport) isUpgradable() bool {
+	return false
+}
+
+func (p *wsTransport) upgrading() error {
+	return nil
+}
+
+func (p *wsTransport) upgrade() error {
+	return nil
+}
+
 func (p *wsTransport) transport(ctx *context) error {
+	// ensure socket
+	isNew := len(ctx.sid) < 1
+	var socket *socketImpl
+	if isNew {
+		ctx.sid = p.eng.generateId()
+		socket = newSocket(ctx.sid, p)
+	} else if it, ok := p.eng.getSocket(ctx.sid); ok {
+		old := it.getFirstTransport()
+		old.upgrading()
+		it.setTransport(p)
+		socket = it
+	} else {
+		return errors.New(fmt.Sprintf("no such socket#%s", ctx.sid))
+	}
+	p.socket = socket
+
+	p.socket.OnUpgrade(func() {
+		p.socket.clearTransports()
+	})
+
+	defer socket.Close()
+
 	// upgrade to websocket.
 	if conn, err := upgrader.Upgrade(ctx.res, ctx.req, nil); err != nil {
 		glog.Errorln("websocket upgrade failed:", err)
@@ -97,36 +135,30 @@ func (p *wsTransport) transport(ctx *context) error {
 		p.connect = conn
 	}
 
-	// create socket
-	if len(ctx.sid) < 1 {
-		ctx.sid = p.eng.generateId()
-	}
-	socket := newSocket(ctx.sid, p)
-
 	// flush after write
 	p.onWrite = func() {
 		p.flush()
 	}
 
 	// send connect ok.
-	if err := p.write(newPacketByJSON(typeOpen, &messageOK{
-		Sid:          ctx.sid,
-		Upgrades:     make([]Transport, 0),
-		PingInterval: p.eng.options.pingInterval,
-		PingTimeout:  p.eng.options.pingTimeout,
-	})); err != nil {
-		return err
+	if isNew {
+		msgOpen := newPacketByJSON(typeOpen, &messageOK{
+			Sid:          ctx.sid,
+			Upgrades:     make([]Transport, 0),
+			PingInterval: p.eng.options.pingInterval,
+			PingTimeout:  p.eng.options.pingTimeout,
+		})
+		if err := p.write(msgOpen); err != nil {
+			return err
+		}
+		// add socket
+		p.eng.putSocket(socket)
+		for _, cb := range p.eng.onSockets {
+			go cb(socket)
+		}
 	}
 
-	// add socket
-	p.eng.putSocket(socket)
-	defer socket.Close()
-
-	for _, cb := range p.eng.onSockets {
-		go cb(socket)
-	}
-
-	// begin read
+	// begin reading
 	return p.foreverRead(socket)
 }
 
@@ -144,16 +176,16 @@ func (p *wsTransport) foreverRead(socket *socketImpl) error {
 			if pack, err := stringEncoder.decode(message); err != nil {
 				glog.Errorln("decode packet failed:", err)
 				return err
-			} else {
-				socket.accept(pack)
+			} else if err := socket.accept(pack); err != nil {
+				return err
 			}
 			break
 		case websocket.BinaryMessage:
 			if pack, err := binaryEncoder.decode(message); err != nil {
 				glog.Errorln("decode packet failed:", err)
 				return err
-			} else {
-				socket.accept(pack)
+			} else if err := socket.accept(pack); err != nil {
+				return err
 			}
 			break
 		}

@@ -8,6 +8,8 @@ import (
 
 	"sync/atomic"
 
+	"sync"
+
 	"github.com/golang/glog"
 )
 
@@ -15,9 +17,42 @@ type socketImpl struct {
 	id         string
 	heart      uint32
 	onMessages []func([]byte)
+	onUpgrades []func()
 	onErrors   []func(err error)
 	onCloses   []func(reason string)
-	t          transport
+	locker     *sync.RWMutex
+	transports []transport
+}
+
+func (p *socketImpl) clearTransports() {
+	p.locker.Lock()
+	if len(p.transports) > 1 {
+		var deads []transport
+		sp := len(p.transports) - 1
+		deads, p.transports = p.transports[0:sp], p.transports[sp:]
+		for _, dead := range deads {
+			dead.close()
+		}
+	}
+	p.locker.Unlock()
+}
+
+func (p *socketImpl) setTransport(t transport) {
+	p.locker.Lock()
+	p.transports = append(p.transports, t)
+	p.locker.Unlock()
+}
+
+func (p *socketImpl) getFirstTransport() transport {
+	p.locker.RLock()
+	defer p.locker.RUnlock()
+	return p.transports[0]
+}
+
+func (p *socketImpl) getTransport() transport {
+	p.locker.RLock()
+	defer p.locker.RUnlock()
+	return p.transports[len(p.transports)-1]
 }
 
 func (p *socketImpl) shit(e interface{}) {
@@ -45,6 +80,16 @@ func (p *socketImpl) accept(packet *Packet) error {
 	switch packet.typo {
 	default:
 		return errors.New(fmt.Sprintf("unsupport packet: %d", packet.typo))
+	case typeClose:
+		p.Close()
+		break
+	case typeUpgrade:
+		if p.onUpgrades != nil {
+			for _, fn := range p.onUpgrades {
+				go fn()
+			}
+		}
+		break
 	case typePing:
 		go func() {
 			// refresh heartbeat then pong it.
@@ -53,7 +98,7 @@ func (p *socketImpl) accept(packet *Packet) error {
 				atomic.StoreUint32(&(p.heart), now)
 			}
 			pong := newPacket(typePong, packet.data, 0)
-			p.t.write(pong)
+			p.getTransport().write(pong)
 		}()
 		break
 	case typeMessage:
@@ -76,7 +121,7 @@ func (p *socketImpl) Id() string {
 }
 
 func (p *socketImpl) Server() Engine {
-	return p.t.getEngine()
+	return p.getTransport().getEngine()
 }
 
 func (p *socketImpl) OnClose(handler func(reason string)) Socket {
@@ -94,6 +139,11 @@ func (p *socketImpl) OnError(handler func(err error)) Socket {
 	return p
 }
 
+func (p *socketImpl) OnUpgrade(handler func()) Socket {
+	p.onUpgrades = append(p.onUpgrades, handler)
+	return p
+}
+
 func (p *socketImpl) Send(message interface{}) error {
 	return p.SendCustom(message, 0)
 }
@@ -104,7 +154,7 @@ func (p *socketImpl) SendCustom(message interface{}, options SendOption) error {
 	}
 	packet := newPacketAuto(typeMessage, message)
 	packet.option |= options
-	return p.t.write(packet)
+	return p.getTransport().write(packet)
 }
 
 func (p *socketImpl) Close() {
@@ -113,10 +163,11 @@ func (p *socketImpl) Close() {
 	}
 	atomic.StoreUint32(&(p.heart), 0)
 	var reason string
-	if err := p.t.close(); err != nil {
+	t := p.getTransport()
+	if err := t.close(); err != nil {
 		reason = err.Error()
 	}
-	p.t.getEngine().removeSocket(p)
+	t.getEngine().removeSocket(p)
 	for _, fn := range p.onCloses {
 		go fn(reason)
 	}
@@ -125,17 +176,19 @@ func (p *socketImpl) Close() {
 func (p *socketImpl) isLost() bool {
 	now := uint32(time.Now().Unix())
 	d := 1000 * (now - atomic.LoadUint32(&(p.heart)))
-	return d > p.t.getEngine().options.pingTimeout
+	return d > p.getTransport().getEngine().options.pingTimeout
 }
 
-func newSocket(id string, transport transport) *socketImpl {
+func newSocket(id string, t transport) *socketImpl {
 	now := uint32(time.Now().Unix())
 	socket := socketImpl{
 		id:         id,
 		heart:      now,
+		onUpgrades: make([]func(), 0),
 		onMessages: make([]func([]byte), 0),
 		onErrors:   make([]func(error), 0),
-		t:          transport,
+		locker:     new(sync.RWMutex),
+		transports: []transport{t},
 	}
 	return &socket
 }

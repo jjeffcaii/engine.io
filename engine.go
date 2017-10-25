@@ -65,9 +65,25 @@ func (p *engineImpl) Router() func(w http.ResponseWriter, r *http.Request) {
 		var err error
 
 		if len(qSid) < 1 {
-			tp, err = newTransport(p, qTp)
+			tp, err = newTransport(p, Transport(qTp))
 		} else if socket, ok := p.getSocket(qSid); ok {
-			tp = socket.t
+			tt := Transport(qTp)
+			switch tt {
+			default:
+				err = errors.New("conflict transport settings")
+				break
+			case WEBSOCKET:
+				_, ws := socket.getTransport().(*wsTransport)
+				if ws {
+					tp = socket.getTransport()
+				} else {
+					tp, err = newTransport(p, tt)
+				}
+				break
+			case POLLING:
+				tp = socket.getFirstTransport()
+				break
+			}
 		} else {
 			err = errors.New(fmt.Sprintf("no such socket#%s", qSid))
 		}
@@ -86,7 +102,9 @@ func (p *engineImpl) Router() func(w http.ResponseWriter, r *http.Request) {
 			req:    request,
 			res:    writer,
 		}
-		tp.transport(&ctx)
+		if err := tp.transport(&ctx); err != nil {
+			glog.Errorln(err)
+		}
 	}
 }
 

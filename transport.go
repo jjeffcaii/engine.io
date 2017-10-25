@@ -19,13 +19,14 @@ type transport interface {
 	transport(ctx *context) error
 	write(packet *Packet) error
 	flush() error
-	upgrade() (transport, error)
 	close() error
 	getEngine() *engineImpl
+	upgrading() error
+	upgrade() error
 }
 
-func newTransport(engine *engineImpl, transport string) (transport, error) {
-	switch Transport(transport) {
+func newTransport(engine *engineImpl, transport Transport) (transport, error) {
+	switch transport {
 	default:
 		return nil, errors.New(fmt.Sprintf("invalid transport '%s'", transport))
 	case WEBSOCKET:
