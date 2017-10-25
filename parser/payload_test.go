@@ -33,8 +33,8 @@ func TestNativeRead(t *testing.T) {
 }
 
 func TestDecodePayload(t *testing.T) {
-	input := "7:4你好，世界!1:5"
-	packets, err := Payload.Decode([]byte(input))
+	input := []byte("7:4你好，世界!1:5")
+	packets, err := Payload.Decode(input)
 	if err != nil {
 		t.Error(err)
 	}

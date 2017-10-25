@@ -70,19 +70,23 @@ func (p *ppp) Decode(input []byte) ([]*Packet, error) {
 			size, left, err = readPacketLength(left)
 		} else {
 			bingo, left, err = readPacketString(left, size)
-			size = 0
-			if bingo[0] != 'b' {
-				packet, err = stringEncoder.decode(input)
-			} else {
-				packet, err = base64Encoder.decode(input)
-			}
+			packet, err = readPacket(bingo)
 			if err != nil {
 				return nil, err
 			}
 			packets = append(packets, packet)
+			size = 0
 		}
 	}
 	return packets, err
+}
+
+func readPacket(input []byte) (*Packet, error) {
+	if input[0] != 'b' {
+		return stringEncoder.decode(input)
+	} else {
+		return base64Encoder.decode(input)
+	}
 }
 
 func readPacketLength(input []byte) (int, []byte, error) {
