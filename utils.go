@@ -4,14 +4,36 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"math/rand"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 )
 
+var emptyStringArray = make([]string, 0)
+
 func init() {
 	rand.Seed(time.Now().UnixNano())
+}
+
+func sendError(writer http.ResponseWriter, e error, codes ...int) {
+	httpCode, bizCode := http.StatusInternalServerError, 0
+	if len(codes) > 0 {
+		httpCode = codes[0]
+	}
+	if len(codes) > 1 {
+		bizCode = codes[1]
+	}
+	writer.WriteHeader(httpCode)
+	writer.Header().Set("Content-Type", "application/json; charset=UTF8")
+	foo := struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}{bizCode, e.Error()}
+	bs, _ := json.Marshal(&foo)
+	writer.Write(bs)
 }
 
 func randomSessionId(seed uint32) string {
@@ -29,6 +51,10 @@ func randomSessionId(seed uint32) string {
 	s = strings.Replace(s, "/", "_", -1)
 	s = strings.Replace(s, "+", "-", -1)
 	return s
+}
+
+func now32() uint32 {
+	return uint32(time.Now().Unix())
 }
 
 type queue struct {

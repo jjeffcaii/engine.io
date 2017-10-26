@@ -21,14 +21,6 @@ var (
 	}{3, "3",}
 )
 
-type context struct {
-	sid    string
-	binary bool
-	t      string
-	req    *http.Request
-	res    http.ResponseWriter
-}
-
 type engineOptions struct {
 	allowUpgrades bool
 	cookie        bool
@@ -36,73 +28,121 @@ type engineOptions struct {
 	pingTimeout   uint32
 }
 
-type engineError struct {
-	Code    int8   `json:"code"`
-	Message string `json:"message"`
-}
-
 type engineImpl struct {
-	sidGen     func(seq uint32) string
-	sequence   uint32
-	path       string
-	options    *engineOptions
-	onSockets  []func(Socket)
-	sockets    cmap.ConcurrentMap
-	junkKiller chan struct{}
-	junkTicker *time.Ticker
+	allowTransports []TransportType
+	sidGen          func(seq uint32) string
+	sequence        uint32
+	path            string
+	options         *engineOptions
+	onSockets       []func(Socket)
+	sockets         cmap.ConcurrentMap
+	junkKiller      chan struct{}
+	junkTicker      *time.Ticker
+	gets            int32
+	posts           int32
 }
 
-func (p *engineImpl) Router() func(w http.ResponseWriter, r *http.Request) {
+func (p *engineImpl) Debug() string {
+	m := make(map[string]int32)
+	m["gets"] = atomic.LoadInt32(&(p.gets))
+	m["posts"] = atomic.LoadInt32(&(p.posts))
+	bs, _ := json.Marshal(m)
+	return string(bs)
+}
+
+func (p *engineImpl) checkVersion(eio string) error {
+	if eio != protocolVersion.s {
+		return errors.New(fmt.Sprintf("illegal protocol version: EIO=%s", eio))
+	}
+	return nil
+}
+
+func (p *engineImpl) checkTransport(qTransport string) (TransportType, error) {
+	t, err := parseTransportType(qTransport)
+	if err != nil {
+		return -1, err
+	}
+	for _, tt := range p.allowTransports {
+		if t == tt {
+			return t, nil
+		}
+	}
+	return -1, errors.New(fmt.Sprintf("transport '%s' is forbiden", qTransport))
+}
+
+func (p *engineImpl) Router() func(http.ResponseWriter, *http.Request) {
 	p.ensureCleaner()
 	return func(writer http.ResponseWriter, request *http.Request) {
-		query := request.URL.Query()
-		eio := query.Get("EIO")
-		if eio != protocolVersion.s {
-			panic(errors.New(fmt.Sprintf("illegal protocol version: EIO=%s", eio)))
-		}
-		var qSid, qTp = query.Get("sid"), query.Get("transport")
-		var tp transport
-		var err error
-
-		if len(qSid) < 1 {
-			tp, err = newTransport(p, Transport(qTp))
-		} else if socket, ok := p.getSocket(qSid); ok {
-			tt := Transport(qTp)
-			switch tt {
-			default:
-				err = errors.New("conflict transport settings")
-				break
-			case WEBSOCKET:
-				_, ws := socket.getTransport().(*wsTransport)
-				if ws {
-					tp = socket.getTransport()
-				} else {
-					tp, err = newTransport(p, tt)
-				}
-				break
-			case POLLING:
-				tp = socket.getFirstTransport()
-				break
-			}
-		} else {
-			err = errors.New(fmt.Sprintf("no such socket#%s", qSid))
-		}
-
-		if err != nil {
-			writer.WriteHeader(http.StatusBadRequest)
-			writer.Header().Set("Content-Type", "application/json")
-			e := engineError{Code: 0, Message: "Transport unknown"}
-			bs, _ := json.Marshal(&e)
-			writer.Write(bs)
+		if request.Method == http.MethodOptions {
+			writer.WriteHeader(http.StatusOK)
 			return
 		}
-		ctx := context{
-			sid:    qSid,
-			binary: query.Get("b64") == "1",
-			req:    request,
-			res:    writer,
+		if !(request.Method == http.MethodGet || request.Method == http.MethodPost) {
+			writer.WriteHeader(http.StatusMethodNotAllowed)
+			return
 		}
-		tp.transport(&ctx)
+		query := request.URL.Query()
+		if request.Method == http.MethodGet {
+			atomic.AddInt32(&(p.gets), 1)
+			defer atomic.AddInt32(&(p.gets), -1)
+		} else if request.Method == http.MethodPost {
+			atomic.AddInt32(&(p.posts), 1)
+			defer atomic.AddInt32(&(p.posts), -1)
+		}
+
+		var err error
+
+		// check protocol version
+		if err = p.checkVersion(query.Get("EIO")); err != nil {
+			sendError(writer, err, http.StatusBadRequest)
+			return
+		}
+
+		// check transport
+		var ttype TransportType
+		if ttype, err = p.checkTransport(query.Get("transport")); err != nil {
+			sendError(writer, errors.New("transprot error"), http.StatusBadRequest, 0)
+			return
+		}
+
+		var sid = query.Get("sid")
+		var isNew = len(sid) < 1
+
+		var socket *socketImpl
+		var tp Transport
+
+		if isNew {
+			sid = p.generateId()
+			tp, socket = newTransport(p, ttype), newSocket(sid, p)
+			bind(tp, socket)
+			if err = tp.ready(writer, request); err != nil {
+				sendError(writer, err)
+				return
+			}
+			socket.OnClose(func(reason string) {
+				p.removeSocket(socket)
+			})
+			p.putSocket(socket)
+			p.socketCreated(socket)
+		} else if socket0, ok := p.getSocket(sid); !ok {
+			sendError(writer, errors.New(fmt.Sprintf("socket#%s doesn't exist", sid)))
+			return
+		} else {
+			socket = socket0
+			tp0 := socket0.getTransport()
+			ttype0 := tp0.GetType()
+			if ttype > ttype0 {
+				tp := newTransport(p, ttype)
+				bind(tp, socket)
+				// TODO: need upgrade
+			} else if ttype < ttype0 {
+				// TODO: use old transport
+				tp = socket0.getTransportOld()
+			} else {
+				tp = tp0
+			}
+		}
+		tp.doReq(writer, request)
 	}
 }
 
@@ -167,7 +207,7 @@ func (p *engineImpl) ensureCleaner() {
 	if p.junkTicker != nil {
 		return
 	}
-	p.junkTicker = time.NewTicker(time.Millisecond * time.Duration(p.options.pingInterval))
+	p.junkTicker = time.NewTicker(time.Millisecond * time.Duration(p.options.pingTimeout))
 	// cron: check and kill lost socket.
 	go func() {
 		for {
@@ -197,10 +237,32 @@ func (p *engineImpl) ensureCleaner() {
 	}()
 }
 
+func (p *engineImpl) socketCreated(socket *socketImpl) {
+	if p.onSockets == nil {
+		return
+	}
+	for _, fn := range p.onSockets {
+		go func() {
+			defer func() {
+				if e := recover(); e != nil {
+					glog.Errorln("handle socket connect failed:", e)
+				}
+			}()
+			fn(socket)
+		}()
+	}
+}
+
 type engineBuilder struct {
-	options *engineOptions
-	path    string
-	gen     func(uint32) string
+	allowTransports []TransportType
+	options         *engineOptions
+	path            string
+	gen             func(uint32) string
+}
+
+func (p *engineBuilder) SetTransports(transports ...TransportType) *engineBuilder {
+	p.allowTransports = transports
+	return p
 }
 
 func (p *engineBuilder) SetGenerateId(gen func(uint32) string) *engineBuilder {
@@ -232,6 +294,7 @@ func (p *engineBuilder) Build() Engine {
 	clone := func(origin engineOptions) engineOptions {
 		return origin
 	}(*p.options)
+
 	eng := &engineImpl{
 		onSockets:  make([]func(Socket), 0),
 		options:    &clone,
@@ -241,7 +304,31 @@ func (p *engineBuilder) Build() Engine {
 		junkKiller: make(chan struct{}),
 		junkTicker: nil,
 	}
+	if len(p.allowTransports) < 1 {
+		eng.allowTransports = []TransportType{POLLING, WEBSOCKET}
+	} else {
+		allows := make([]TransportType, 0)
+		copy(allows, p.allowTransports)
+		eng.allowTransports = allows
+	}
+
 	return eng
+}
+
+func parseTransportType(s string) (TransportType, error) {
+	switch s {
+	default:
+		return -1, errors.New("invalid transport " + s)
+	case "polling":
+		return POLLING, nil
+	case "websocket":
+		return WEBSOCKET, nil
+	}
+}
+
+func bind(tp Transport, socket *socketImpl) {
+	socket.setTransport(tp)
+	tp.setSocket(socket)
 }
 
 func NewEngineBuilder() *engineBuilder {
