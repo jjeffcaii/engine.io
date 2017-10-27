@@ -1,4 +1,4 @@
-package engine_io
+package eio
 
 import (
 	"errors"
@@ -8,12 +8,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/jjeffcaii/engine.io/parser"
 )
 
 var (
-	ErrHttpMethod = errors.New("transport: illegal http method")
-	ErrPollingEOF = errors.New("transport: polling EOF")
+	errHTTPMethod = errors.New("transport: illegal http method")
+	errPollingEOF = errors.New("transport: polling EOF")
 )
 
 type xhrTransport struct {
@@ -37,7 +38,7 @@ func (p *xhrTransport) GetSocket() Socket {
 
 func (p *xhrTransport) ready(writer http.ResponseWriter, request *http.Request) error {
 	if request.Method != http.MethodGet {
-		return ErrHttpMethod
+		return errHTTPMethod
 	}
 	okMsg := messageOK{
 		Sid:          p.socket.id,
@@ -71,7 +72,7 @@ func (p *xhrTransport) doReq(writer http.ResponseWriter, request *http.Request) 
 			p.req = nil
 			p.res = nil
 		}()
-		if err := p.flush(); err == ErrPollingEOF {
+		if err := p.flush(); err == errPollingEOF {
 			bs, _ := parser.Payload.Encode(parser.NewPacketCustom(parser.CLOSE, make([]byte, 0), 0))
 			p.res.Write(bs)
 			p.socket.Close()
@@ -145,7 +146,7 @@ func (p *xhrTransport) flush() error {
 		select {
 		case pk := <-p.outbox:
 			if pk == nil {
-				return ErrPollingEOF
+				return errPollingEOF
 			}
 			queue = append(queue, pk)
 			break
@@ -161,15 +162,16 @@ func (p *xhrTransport) flush() error {
 	if len(queue) < 1 {
 		select {
 		case <-closeNotifier.CloseNotify():
-			return ErrPollingEOF
+			glog.Warningln("notify close")
+			return errPollingEOF
 		case pk := <-p.outbox:
 			if pk == nil {
-				return ErrPollingEOF
+				return errPollingEOF
 			}
 			queue = append(queue, pk)
 			break
 		case <-time.After(time.Millisecond * time.Duration(p.eng.options.pingTimeout)):
-			return ErrPollingEOF
+			return errPollingEOF
 			//queue = append(queue, parser.NewPacketCustom(parser.CLOSE, make([]byte, 0), 0))
 		}
 	}

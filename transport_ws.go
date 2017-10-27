@@ -1,4 +1,4 @@
-package engine_io
+package eio
 
 import (
 	"errors"
@@ -12,7 +12,7 @@ import (
 
 var (
 	libWebsocket          *websocket.Upgrader
-	ErrUpgradeWsTransport error
+	errUpgradeWsTransport error
 )
 
 func init() {
@@ -22,7 +22,7 @@ func init() {
 		WriteBufferSize:   1024,
 		EnableCompression: true,
 	}
-	ErrUpgradeWsTransport = errors.New("transport: cannot upgrade websocket transport")
+	errUpgradeWsTransport = errors.New("transport: cannot upgrade websocket transport")
 }
 
 type wsTransport struct {
@@ -119,7 +119,7 @@ func (p *wsTransport) doReq(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (p *wsTransport) doUpgrade() error {
-	return ErrUpgradeWsTransport
+	return errUpgradeWsTransport
 }
 
 func (p *wsTransport) write(packet *parser.Packet) error {

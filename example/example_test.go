@@ -41,18 +41,18 @@ func TestNothing(t *testing.T) {
 			log.Println("========> socket closed:", socket.Id())
 		})
 	})
-	http.HandleFunc(eio.DEFAULT_PATH, server.Router())
+	http.HandleFunc(eio.DefaultPath, server.Router())
 	log.Fatalln(http.ListenAndServe(":3000", nil))
 }
 
 func TestEcho(t *testing.T) {
 	server.OnConnect(func(socket eio.Socket) {
-		log.Println("========> socket connect:", socket.Id())
+		//log.Println("========> socket connect:", socket.ID())
 		socket.OnMessage(func(data []byte) {
 			socket.Send(fmt.Sprintf("ECHO: %s", data))
 		})
 		socket.OnClose(func(reason string) {
-			log.Println("========> socket closed:", socket.Id())
+			//log.Println("========> socket closed:", socket.ID())
 		})
 	})
 	log.Fatalln(server.Listen(":3000"))
@@ -81,13 +81,13 @@ func TestEchoAndBrd(t *testing.T) {
 		server.Close()
 	}()
 	server.OnConnect(func(socket eio.Socket) {
-		//log.Println("========> socket connect:", socket.Id())
+		//log.Println("========> socket connect:", socket.ID())
 		socket.OnMessage(func(data []byte) {
 			socket.Send(fmt.Sprintf("ECHO1: %s", data))
 			socket.Send(fmt.Sprintf("ECHO2: %s", data))
 		})
 		socket.OnClose(func(reason string) {
-			//log.Println("========> socket closed:", socket.Id())
+			//log.Println("========> socket closed:", socket.ID())
 		})
 	})
 	log.Fatalln(server.Listen(":3000"))

@@ -1,4 +1,4 @@
-package engine_io
+package eio
 
 import (
 	"errors"
@@ -24,7 +24,7 @@ type socketImpl struct {
 	transportB Transport
 }
 
-func (p *socketImpl) Id() string {
+func (p *socketImpl) ID() string {
 	return p.id
 }
 
@@ -116,15 +116,14 @@ func (p *socketImpl) Send(message interface{}) error {
 
 func (p *socketImpl) SendCustom(message interface{}, options parser.PacketOption) error {
 	if atomic.LoadUint32(&(p.heartbeat)) == 0 {
-		return errors.New(fmt.Sprintf("socket#%s is closed", p.id))
+		return fmt.Errorf("socket#%s is closed", p.id)
 	}
 	packet := parser.NewPacketAuto(parser.MESSAGE, message)
 	packet.Option |= options
 	if p.transportA != nil {
 		return p.transportA.write(packet)
-	} else {
-		return p.transportB.write(packet)
 	}
+	return p.transportB.write(packet)
 }
 
 func (p *socketImpl) Close() {
@@ -183,7 +182,7 @@ func (p *socketImpl) getTransportOld() Transport {
 func (p *socketImpl) accept(packet *parser.Packet) error {
 	switch packet.Type {
 	default:
-		return errors.New(fmt.Sprintf("unsupport packet: %d", packet.Type))
+		return fmt.Errorf("unsupport packet: %d", packet.Type)
 	case parser.CLOSE:
 		p.Close()
 		break
