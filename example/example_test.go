@@ -23,6 +23,10 @@ func init() {
 		writer.WriteHeader(http.StatusOK)
 		writer.Write([]byte(fmt.Sprintf("totals: %d", server.CountClients())))
 	})
+	http.HandleFunc("/foobar", func(writer http.ResponseWriter, request *http.Request) {
+		writer.WriteHeader(http.StatusOK)
+		writer.Write([]byte(server.Debug()))
+	})
 
 }
 
@@ -33,10 +37,6 @@ func TestNothing(t *testing.T) {
 			// do nothing.
 			log.Println("===> got message:", string(data))
 		})
-		var c int
-		socket.OnMessage(func(data []byte) {
-			c++
-		})
 		socket.OnClose(func(reason string) {
 			log.Println("========> socket closed:", socket.Id())
 		})
@@ -46,6 +46,19 @@ func TestNothing(t *testing.T) {
 }
 
 func TestEcho(t *testing.T) {
+	server.OnConnect(func(socket eio.Socket) {
+		log.Println("========> socket connect:", socket.Id())
+		socket.OnMessage(func(data []byte) {
+			socket.Send(fmt.Sprintf("ECHO: %s", data))
+		})
+		socket.OnClose(func(reason string) {
+			log.Println("========> socket closed:", socket.Id())
+		})
+	})
+	log.Fatalln(server.Listen(":3000"))
+}
+
+func TestEchoAndBrd(t *testing.T) {
 	tick := time.NewTicker(5 * time.Second)
 	kill := make(chan uint8)
 	go func() {
@@ -68,13 +81,13 @@ func TestEcho(t *testing.T) {
 		server.Close()
 	}()
 	server.OnConnect(func(socket eio.Socket) {
-		log.Println("========> socket connect:", socket.Id())
+		//log.Println("========> socket connect:", socket.Id())
 		socket.OnMessage(func(data []byte) {
 			socket.Send(fmt.Sprintf("ECHO1: %s", data))
 			socket.Send(fmt.Sprintf("ECHO2: %s", data))
 		})
 		socket.OnClose(func(reason string) {
-			log.Println("========> socket closed:", socket.Id())
+			//log.Println("========> socket closed:", socket.Id())
 		})
 	})
 	log.Fatalln(server.Listen(":3000"))

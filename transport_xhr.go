@@ -1,10 +1,8 @@
 package engine_io
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net/http"
 	"sync"
@@ -13,64 +11,145 @@ import (
 	"github.com/jjeffcaii/engine.io/parser"
 )
 
+var (
+	ErrHttpMethod = errors.New("transport: illegal http method")
+	ErrPollingEOF = errors.New("transport: polling EOF")
+)
+
 type xhrTransport struct {
-	eng         *engineImpl
-	sk          *socketImpl
-	pollingTime time.Duration
-	ctx         *context
-	outbox      chan *parser.Packet
-	onFlush     func()
-	onWrite     func()
-	locker      *sync.RWMutex
+	tinyTransport
+	outbox chan *parser.Packet
+	req    *http.Request
+	res    http.ResponseWriter
 }
 
-func (p *xhrTransport) setSocket(socket *socketImpl) {
-	p.locker.Lock()
-	p.sk = socket
-	p.locker.Unlock()
+func (p *xhrTransport) GetType() TransportType {
+	return POLLING
 }
 
-func (p *xhrTransport) clearSocket() {
-	p.locker.Lock()
-	p.sk = nil
-	p.locker.Unlock()
+func (p *xhrTransport) GetEngine() Engine {
+	return p.eng
 }
 
-func (p *xhrTransport) getSocket() *socketImpl {
-	p.locker.RLock()
-	defer p.locker.RUnlock()
-	socket := p.sk
-	if socket == nil {
-		panic(errors.New("cached socket is nil"))
+func (p *xhrTransport) GetSocket() Socket {
+	return p.socket
+}
+
+func (p *xhrTransport) ready(writer http.ResponseWriter, request *http.Request) error {
+	if request.Method != http.MethodGet {
+		return ErrHttpMethod
 	}
-	return socket
+	okMsg := messageOK{
+		Sid:          p.socket.id,
+		Upgrades:     make([]string, 0),
+		PingInterval: p.eng.options.pingInterval,
+		PingTimeout:  p.eng.options.pingTimeout,
+	}
+	for _, it := range p.eng.allowTransports {
+		if it == WEBSOCKET {
+			okMsg.Upgrades = append(okMsg.Upgrades, "websocket")
+			break
+		}
+	}
+	return p.write(parser.NewPacketByJSON(parser.OPEN, &okMsg))
+}
+
+func (p *xhrTransport) doReq(writer http.ResponseWriter, request *http.Request) {
+	if p.eng.options.cookie {
+		writer.Header().Set("Set-Cookie", fmt.Sprintf("io=%s; Path=/; HttpOnly", p.socket.id))
+	}
+	if _, ok := request.Header["User-Agent"]; ok {
+		writer.Header().Set("Access-Control-Allow-Origin", "*")
+	}
+	switch request.Method {
+	default:
+		break
+	case http.MethodGet:
+		p.req = request
+		p.res = writer
+		defer func() {
+			p.req = nil
+			p.res = nil
+		}()
+		if err := p.flush(); err == ErrPollingEOF {
+			bs, _ := parser.Payload.Encode(parser.NewPacketCustom(parser.CLOSE, make([]byte, 0), 0))
+			p.res.Write(bs)
+			p.socket.Close()
+			p.socket = nil
+		}
+		break
+	case http.MethodPost:
+		var err error
+		defer func() {
+			if err == nil {
+				writer.WriteHeader(http.StatusOK)
+				writer.Header().Set("Content-Type", "text/html; charset=UTF-8")
+				writer.Write([]byte("ok"))
+			} else {
+				writer.WriteHeader(http.StatusInternalServerError)
+				writer.Header().Set("Content-Type", "application/json; charset=UTF-8")
+				sendError(writer, err)
+			}
+		}()
+		// read body
+		var body []byte
+		body, err = ioutil.ReadAll(request.Body)
+		if err != nil {
+			return
+		}
+		// extract packets
+		var packets []*parser.Packet
+		packets, err = parser.Payload.Decode(body)
+		if err != nil {
+			return
+		}
+		// notify socket
+		for _, pack := range packets {
+			err = p.socket.accept(pack)
+			if err != nil {
+				return
+			}
+		}
+		break
+	}
+}
+
+func (p *xhrTransport) doUpgrade() error {
+	p.write(parser.NewPacketCustom(parser.NOOP, make([]byte, 0), 0))
+	return nil
 }
 
 func (p *xhrTransport) write(packet *parser.Packet) error {
-	defer func() {
-		if p.onWrite != nil {
-			p.onWrite()
-		}
+	var err error
+	func() {
+		defer func() {
+			e := recover()
+			if e == nil {
+				return
+			}
+			if e2, ok := e.(error); ok {
+				err = e2
+			}
+		}()
+		p.outbox <- packet
 	}()
-	p.outbox <- packet
+	if p.handlerWrite != nil {
+		p.handlerWrite()
+	}
 	return nil
 }
 
 func (p *xhrTransport) flush() error {
-	defer func() {
-		if p.onFlush != nil {
-			p.onFlush()
-		}
-	}()
-	ctx := p.ctx
-	closeNotifier := ctx.res.(http.CloseNotifier)
+	closeNotifier := p.res.(http.CloseNotifier)
 	queue := make([]*parser.Packet, 0)
-
 	// 1. check current packets inbox chan buffer.
 	end := false
 	for {
 		select {
 		case pk := <-p.outbox:
+			if pk == nil {
+				return ErrPollingEOF
+			}
 			queue = append(queue, pk)
 			break
 		default:
@@ -82,36 +161,27 @@ func (p *xhrTransport) flush() error {
 		}
 	}
 	// 2. waiting packet inbox chan until timeout if queue is empty.
-	var quit bool
 	if len(queue) < 1 {
 		select {
 		case <-closeNotifier.CloseNotify():
-			queue = append(queue, parser.NewPacketCustom(parser.CLOSE, make([]byte, 0), 0))
-			quit = true
-			break
+			return ErrPollingEOF
 		case pk := <-p.outbox:
+			if pk == nil {
+				return ErrPollingEOF
+			}
 			queue = append(queue, pk)
 			break
 		case <-time.After(time.Millisecond * time.Duration(p.eng.options.pingTimeout)):
-			queue = append(queue, parser.NewPacketCustom(parser.CLOSE, make([]byte, 0), 0))
-			quit = true
-			break
+			return ErrPollingEOF
+			//queue = append(queue, parser.NewPacketCustom(parser.CLOSE, make([]byte, 0), 0))
 		}
 	}
-	if bs, err := parser.Payload.Encode(queue...); err != nil {
+	bs, err := parser.Payload.Encode(queue...)
+	if err != nil {
 		return err
-	} else if _, err := ctx.res.Write(bs); err != nil {
-		return err
-	} else if quit {
-		return io.ErrUnexpectedEOF
-	} else {
-		return nil
 	}
-}
-
-func (p *xhrTransport) upgrade() error {
-	p.write(parser.NewPacketCustom(parser.NOOP, make([]byte, 0), 0))
-	return nil
+	_, err = p.res.Write(bs)
+	return err
 }
 
 func (p *xhrTransport) close() error {
@@ -128,111 +198,13 @@ func (p *xhrTransport) close() error {
 	return err
 }
 
-func (p *xhrTransport) getEngine() *engineImpl {
-	return p.eng
-}
-
-func (p *xhrTransport) transport(ctx *context) error {
-	defer ctx.req.Body.Close()
-	if p.eng.options.cookie {
-		ctx.res.Header().Set("Set-Cookie", fmt.Sprintf("io=%s; Path=/; HttpOnly", ctx.sid))
-	}
-	if _, ok := ctx.req.Header["User-Agent"]; ok {
-		ctx.res.Header().Set("Access-Control-Allow-Origin", "*")
-	}
-	switch ctx.req.Method {
-	default:
-		return errors.New(fmt.Sprintf("Unsupported Method: %s", ctx.req.Method))
-	case http.MethodGet:
-		err := p.doGet(ctx)
-		if err == io.ErrUnexpectedEOF {
-			k := p.getSocket()
-			if k != nil {
-				k.Close()
-			}
-		}
-		return err
-	case http.MethodPost:
-		err := p.doPost(ctx)
-		return err
-	}
-}
-
-func (p *xhrTransport) doPost(ctx *context) error {
-	var ex error
-	defer func() {
-		if ex == nil {
-			ctx.res.WriteHeader(http.StatusOK)
-			ctx.res.Header().Set("Content-Type", "text/html; charset=UTF-8")
-			ctx.res.Write([]byte("ok"))
-		} else {
-			ctx.res.WriteHeader(http.StatusInternalServerError)
-			ctx.res.Header().Set("Content-Type", "application/json; charset=UTF-8")
-			errmsg := engineError{Code: 0, Message: ex.Error()}
-			bs, _ := json.Marshal(&errmsg)
-			ctx.res.Write(bs)
-		}
-	}()
-	if body, err := ioutil.ReadAll(ctx.req.Body); err != nil {
-		ex = err
-	} else if packets, err := parser.Payload.Decode(body); err != nil {
-		ex = err
-	} else {
-		socket := p.getSocket()
-		if socket != nil {
-			for _, pack := range packets {
-				if err := socket.accept(pack); err != nil {
-					ex = err
-					break
-				}
-			}
-		}
-	}
-	return ex
-}
-
-func (p *xhrTransport) doGet(ctx *context) error {
-	p.locker.Lock()
-	p.ctx = ctx
-	p.locker.Unlock()
-	if len(ctx.sid) < 1 {
-		if err := p.asNewborn(ctx); err != nil {
-			return err
-		}
-	}
-	p.locker.Lock()
-	defer func() {
-		p.ctx = nil
-		p.locker.Unlock()
-	}()
-	return p.flush()
-}
-
-func (p *xhrTransport) asNewborn(ctx *context) error {
-	ctx.sid = p.eng.generateId()
-	socket := newSocket(ctx.sid, p)
-	p.setSocket(socket)
-	p.eng.putSocket(socket)
-	for _, fn := range p.eng.onSockets {
-		go fn(socket)
-	}
-	okMsg := messageOK{
-		Sid:          ctx.sid,
-		Upgrades:     make([]Transport, 0),
-		PingInterval: p.eng.options.pingInterval,
-		PingTimeout:  p.eng.options.pingTimeout,
-	}
-	if p.eng.options.allowUpgrades {
-		okMsg.Upgrades = append(okMsg.Upgrades, WEBSOCKET)
-	}
-	return p.write(parser.NewPacketByJSON(parser.OPEN, &okMsg))
-}
-
-func newXhrTransport(server *engineImpl) transport {
+func newXhrTransport(server *engineImpl) Transport {
 	trans := xhrTransport{
-		eng:    server,
+		tinyTransport: tinyTransport{
+			eng:    server,
+			locker: new(sync.RWMutex),
+		},
 		outbox: make(chan *parser.Packet, 1024),
-		locker: new(sync.RWMutex),
 	}
 	return &trans
 }

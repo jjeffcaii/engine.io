@@ -6,13 +6,14 @@ import (
 	"github.com/jjeffcaii/engine.io/parser"
 )
 
-type Transport string
+type TransportType int8
 
-var (
-	DEFAULT_PATH string    = "/engine.io/"
-	POLLING      Transport = "polling"
-	WEBSOCKET    Transport = "websocket"
+const (
+	POLLING   TransportType = iota
+	WEBSOCKET TransportType = iota
 )
+
+var DEFAULT_PATH = "/engine.io/"
 
 type Engine interface {
 	Router() func(http.ResponseWriter, *http.Request)
@@ -22,6 +23,22 @@ type Engine interface {
 	CountClients() int
 	OnConnect(func(socket Socket)) Engine
 	Close()
+	Debug() string
+}
+
+type Transport interface {
+	GetType() TransportType
+	GetEngine() Engine
+	GetSocket() Socket
+
+	setSocket(socket Socket)
+
+	ready(writer http.ResponseWriter, request *http.Request) error
+	doReq(writer http.ResponseWriter, request *http.Request)
+	doUpgrade() error
+	write(packet *parser.Packet) error
+	flush() error
+	close() error
 }
 
 type Socket interface {

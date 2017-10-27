@@ -20,21 +20,21 @@ func init() {
 func writePacket(bf *bytes.Buffer, packet *Packet) error {
 	var data []byte
 	var err error
-	var l int
+	var length int
 	if packet.Option&BINARY != BINARY {
 		data, err = stringEncoder.encode(packet)
 		if err != nil {
 			return err
 		}
-		l = utf8.RuneCount(data)
+		length = utf8.RuneCount(data)
 	} else {
 		data, err = base64Encoder.encode(packet)
 		if err != nil {
 			return err
 		}
-		l = len(data)
+		length = len(data)
 	}
-	_, err = bf.WriteString(fmt.Sprintf("%d:", l))
+	_, err = bf.WriteString(fmt.Sprintf("%d:", length))
 	if err != nil {
 		return err
 	}
@@ -46,6 +46,9 @@ func writePacket(bf *bytes.Buffer, packet *Packet) error {
 }
 
 func (p *ppp) Encode(packets ...*Packet) ([]byte, error) {
+	if len(packets) < 1 {
+		return nil, errors.New("input packets is empty")
+	}
 	bf := new(bytes.Buffer)
 	for _, it := range packets {
 		if err := writePacket(bf, it); err != nil {
@@ -62,15 +65,15 @@ func (p *ppp) DecodeString(str string) ([]*Packet, error) {
 func (p *ppp) Decode(input []byte) ([]*Packet, error) {
 	var size int
 	var err error
-	var left, bingo []byte = input, nil
+	var rest, content []byte = input, nil
 	var packets = make([]*Packet, 0)
 	var packet *Packet
-	for len(left) > 0 {
+	for len(rest) > 0 {
 		if size == 0 {
-			size, left, err = readPacketLength(left)
+			size, rest, err = readPacketLength(rest)
 		} else {
-			bingo, left, err = readPacketString(left, size)
-			packet, err = readPacket(bingo)
+			content, rest, err = readPacketString(rest, size)
+			packet, err = readPacket(content)
 			if err != nil {
 				return nil, err
 			}

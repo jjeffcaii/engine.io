@@ -4,17 +4,19 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jjeffcaii/engine.io/parser"
+	"sync"
+
+	"github.com/golang/glog"
 )
 
 type messageOK struct {
-	Sid          string      `json:"sid"`
-	Upgrades     []Transport `json:"upgrades"`
-	PingInterval uint32      `json:"pingInterval"`
-	PingTimeout  uint32      `json:"pingTimeout"`
+	Sid          string   `json:"sid"`
+	Upgrades     []string `json:"upgrades"`
+	PingInterval uint32   `json:"pingInterval"`
+	PingTimeout  uint32   `json:"pingTimeout"`
 }
 
-type transport interface {
+/*type transport interface {
 	//OnFlush() Socket
 	//OnDrain() Socket
 	//OnPacket() Socket
@@ -24,15 +26,66 @@ type transport interface {
 	close() error
 	getEngine() *engineImpl
 	upgrade() error
+}*/
+
+type tinyTransport struct {
+	eng          *engineImpl
+	socket       *socketImpl
+	locker       *sync.RWMutex
+	handlerWrite func()
+	handlerFlush func()
 }
 
-func newTransport(engine *engineImpl, transport Transport) (transport, error) {
+func (p *tinyTransport) onWrite(fn func()) {
+	if fn == nil {
+		return
+	}
+	p.handlerWrite = func() {
+		go func() {
+			defer func() {
+				if e := recover(); e != nil {
+					glog.Errorln("handle write failed:", e)
+				}
+			}()
+			fn()
+		}()
+	}
+}
+
+func (p *tinyTransport) onFlush(fn func()) {
+	if fn == nil {
+		return
+	}
+	p.handlerFlush = func() {
+		go func() {
+			defer func() {
+				if e := recover(); e != nil {
+					glog.Errorln("handle flush failed:", e)
+				}
+			}()
+			fn()
+		}()
+	}
+
+}
+
+func (p *tinyTransport) setSocket(socket Socket) {
+	p.locker.Lock()
+	p.socket = socket.(*socketImpl)
+	p.locker.Unlock()
+}
+
+func (p *tinyTransport) clearSocket() {
+	p.socket = nil
+}
+
+func newTransport(engine *engineImpl, transport TransportType) Transport {
 	switch transport {
 	default:
-		return nil, errors.New(fmt.Sprintf("invalid transport '%s'", transport))
+		panic(errors.New(fmt.Sprintf("invalid transport '%d'", transport)))
 	case WEBSOCKET:
-		return newWebsocketTransport(engine), nil
+		return newWebsocketTransport(engine)
 	case POLLING:
-		return newXhrTransport(engine), nil
+		return newXhrTransport(engine)
 	}
 }

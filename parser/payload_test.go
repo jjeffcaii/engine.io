@@ -48,3 +48,18 @@ func TestDecodePayload(t *testing.T) {
 		t.Error("illegal result")
 	}
 }
+
+func TestDecodePayloadBase64(t *testing.T) {
+	input := []byte("22:b4YmluYXJ5IGZ1Y2sgMiE=")
+	packets, err := Payload.Decode(input)
+	if err != nil {
+		t.Error(err)
+	}
+	if len(packets) != 1 {
+		t.Error("should 1 packets")
+	}
+	exp := "binary fuck 2!"
+	if string(packets[0].Data) != exp {
+		t.Error("data should be:", exp)
+	}
+}
