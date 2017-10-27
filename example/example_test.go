@@ -11,7 +11,7 @@ import (
 
 	"testing"
 
-	eio "github.com/jjeffcaii/engine.io"
+	"github.com/jjeffcaii/engine.io"
 )
 
 var server eio.Engine
@@ -32,13 +32,13 @@ func init() {
 
 func TestNothing(t *testing.T) {
 	server.OnConnect(func(socket eio.Socket) {
-		log.Println("========> socket connect:", socket.Id())
+		log.Println("========> socket connect:", socket.ID())
 		socket.OnMessage(func(data []byte) {
 			// do nothing.
 			log.Println("===> got message:", string(data))
 		})
 		socket.OnClose(func(reason string) {
-			log.Println("========> socket closed:", socket.Id())
+			log.Println("========> socket closed:", socket.ID())
 		})
 	})
 	http.HandleFunc(eio.DefaultPath, server.Router())
@@ -47,12 +47,12 @@ func TestNothing(t *testing.T) {
 
 func TestEcho(t *testing.T) {
 	server.OnConnect(func(socket eio.Socket) {
-		//log.Println("========> socket connect:", socket.ID())
+		log.Println("========> socket connect:", socket.ID())
 		socket.OnMessage(func(data []byte) {
 			socket.Send(fmt.Sprintf("ECHO: %s", data))
 		})
 		socket.OnClose(func(reason string) {
-			//log.Println("========> socket closed:", socket.ID())
+			log.Println("========> socket closed:", socket.ID())
 		})
 	})
 	log.Fatalln(server.Listen(":3000"))
