@@ -1,4 +1,4 @@
-package engine_io
+package eio
 
 import (
 	"encoding/json"
@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"sync/atomic"
 	"time"
-
-	"strings"
 
 	"github.com/golang/glog"
 	"github.com/orcaman/concurrent-map"
@@ -35,7 +33,7 @@ type engineImpl struct {
 	path            string
 	options         *engineOptions
 	onSockets       []func(Socket)
-	sockets         cmap.ConcurrentMap
+	sockets         *socketMap
 	junkKiller      chan struct{}
 	junkTicker      *time.Ticker
 	gets            int32
@@ -50,24 +48,29 @@ func (p *engineImpl) Debug() string {
 	return string(bs)
 }
 
-func (p *engineImpl) checkVersion(eio string) error {
-	if eio != protocolVersion.s {
-		return errors.New(fmt.Sprintf("illegal protocol version: EIO=%s", eio))
+func (p *engineImpl) checkVersion(v string) error {
+	if v != protocolVersion.s {
+		return fmt.Errorf("illegal protocol version: EIO=%s", v)
 	}
 	return nil
 }
 
 func (p *engineImpl) checkTransport(qTransport string) (TransportType, error) {
-	t, err := parseTransportType(qTransport)
-	if err != nil {
-		return -1, err
+	var t TransportType
+	switch qTransport {
+	default:
+		return -1, fmt.Errorf("invalid transport '%s'", qTransport)
+	case "polling":
+		t = POLLING
+	case "websocket":
+		t = WEBSOCKET
 	}
-	for _, tt := range p.allowTransports {
-		if t == tt {
+	for _, it := range p.allowTransports {
+		if t == it {
 			return t, nil
 		}
 	}
-	return -1, errors.New(fmt.Sprintf("transport '%s' is forbiden", qTransport))
+	return -1, fmt.Errorf("transport '%s' is forbiden", qTransport)
 }
 
 func (p *engineImpl) Router() func(http.ResponseWriter, *http.Request) {
@@ -112,31 +115,31 @@ func (p *engineImpl) Router() func(http.ResponseWriter, *http.Request) {
 		var tp Transport
 
 		if isNew {
-			sid = p.generateId()
+			sid = p.generateID()
 			tp, socket = newTransport(p, ttype), newSocket(sid, p)
-			bind(tp, socket)
+			socket.setTransport(tp)
+			tp.setSocket(socket)
 			if err = tp.ready(writer, request); err != nil {
 				sendError(writer, err)
 				return
 			}
 			socket.OnClose(func(reason string) {
-				p.removeSocket(socket)
+				p.sockets.Remove(socket)
 			})
-			p.putSocket(socket)
+			p.sockets.Put(socket)
 			p.socketCreated(socket)
-		} else if socket0, ok := p.getSocket(sid); !ok {
-			sendError(writer, errors.New(fmt.Sprintf("socket#%s doesn't exist", sid)))
+		} else if socket0, ok := p.sockets.Get(sid); !ok {
+			sendError(writer, fmt.Errorf("%s:socket#%s doesn't exist", request.Method, sid))
 			return
 		} else {
 			socket = socket0
 			tp0 := socket0.getTransport()
 			ttype0 := tp0.GetType()
 			if ttype > ttype0 {
-				tp := newTransport(p, ttype)
-				bind(tp, socket)
-				// TODO: need upgrade
+				tp = newTransport(p, ttype)
+				tp.setSocket(socket)
+				socket.setTransport(tp)
 			} else if ttype < ttype0 {
-				// TODO: use old transport
 				tp = socket0.getTransportOld()
 			} else {
 				tp = tp0
@@ -160,11 +163,11 @@ func (p *engineImpl) GetProtocol() uint8 {
 }
 
 func (p *engineImpl) GetClients() map[string]Socket {
-	snapshot := make(map[string]Socket)
-	for entry := range p.sockets.IterBuffered() {
-		snapshot[entry.Key] = entry.Val.(Socket)
+	m := make(map[string]Socket)
+	for _, it := range p.sockets.List(nil) {
+		m[it.ID()] = it
 	}
-	return snapshot
+	return m
 }
 
 func (p *engineImpl) CountClients() int {
@@ -176,31 +179,8 @@ func (p *engineImpl) OnConnect(onConn func(socket Socket)) Engine {
 	return p
 }
 
-func (p *engineImpl) removeSocket(socket *socketImpl) {
-	p.sockets.Remove(socket.id)
-}
-
-func (p *engineImpl) generateId() string {
+func (p *engineImpl) generateID() string {
 	return p.sidGen(atomic.AddUint32(&(p.sequence), 1))
-}
-
-func (p *engineImpl) putSocket(socket *socketImpl) {
-	sid := socket.id
-	if !p.sockets.SetIfAbsent(sid, socket) {
-		panic(errors.New(fmt.Sprintf("socket#%s exists already", sid)))
-	}
-}
-
-func (p *engineImpl) getSocket(id string) (*socketImpl, bool) {
-	if socket, ok := p.sockets.Get(id); ok {
-		return socket.(*socketImpl), ok
-	} else {
-		return nil, ok
-	}
-}
-
-func (p *engineImpl) hasSocket(id string) bool {
-	return p.sockets.Has(id)
 }
 
 func (p *engineImpl) ensureCleaner() {
@@ -213,20 +193,14 @@ func (p *engineImpl) ensureCleaner() {
 		for {
 			select {
 			case <-p.junkTicker.C:
-				losts := make([]*socketImpl, 0)
-				for entry := range p.sockets.IterBuffered() {
-					it := entry.Val.(*socketImpl)
-					if it.isLost() {
-						losts = append(losts, it)
-					}
-				}
+				losts := p.sockets.List(func(val *socketImpl) bool {
+					return val.isLost()
+				})
 				if len(losts) > 0 {
-					lostIds := make([]string, 0)
 					for _, it := range losts {
 						it.Close()
-						lostIds = append(lostIds, it.id)
 					}
-					glog.Infof("***** kill %d DEAD sockets: %s *****\n", len(losts), strings.Join(lostIds, ","))
+					glog.Infof("***** kill %d DEAD sockets *****\n", len(losts))
 				}
 				break
 			case <-p.junkKiller:
@@ -253,52 +227,62 @@ func (p *engineImpl) socketCreated(socket *socketImpl) {
 	}
 }
 
-type engineBuilder struct {
+// EngineBuilder is a builder for Engine.
+type EngineBuilder struct {
 	allowTransports []TransportType
 	options         *engineOptions
 	path            string
 	gen             func(uint32) string
 }
 
-func (p *engineBuilder) SetTransports(transports ...TransportType) *engineBuilder {
+// SetTransports define transport types allow.
+func (p *EngineBuilder) SetTransports(transports ...TransportType) *EngineBuilder {
 	p.allowTransports = transports
 	return p
 }
 
-func (p *engineBuilder) SetGenerateId(gen func(uint32) string) *engineBuilder {
+// SetGenerateID define the method of creating SocketID.
+func (p *EngineBuilder) SetGenerateID(gen func(uint32) string) *EngineBuilder {
 	p.gen = gen
 	return p
 }
 
-func (p *engineBuilder) SetPath(path string) *engineBuilder {
+// SetPath define the http router path for Engine.
+func (p *EngineBuilder) SetPath(path string) *EngineBuilder {
 	p.path = path
 	return p
 }
 
-func (p *engineBuilder) SetCookie(enable bool) *engineBuilder {
+// SetCookie can control enable/disable of cookie.
+func (p *EngineBuilder) SetCookie(enable bool) *EngineBuilder {
 	p.options.cookie = enable
 	return p
 }
 
-func (p *engineBuilder) SetPingInterval(interval uint32) *engineBuilder {
+// SetPingInterval define ping time interval in millseconds for client.
+func (p *EngineBuilder) SetPingInterval(interval uint32) *EngineBuilder {
 	p.options.pingInterval = interval
 	return p
 }
 
-func (p *engineBuilder) SetPingTimeout(timeout uint32) *engineBuilder {
+// SetPingTimeout define ping timeout in millseconds for client.
+func (p *EngineBuilder) SetPingTimeout(timeout uint32) *EngineBuilder {
 	p.options.pingTimeout = timeout
 	return p
 }
 
-func (p *engineBuilder) Build() Engine {
+// Build returns a new Engine.
+func (p *EngineBuilder) Build() Engine {
 	clone := func(origin engineOptions) engineOptions {
 		return origin
 	}(*p.options)
-
+	sockets := socketMap{
+		smap: cmap.New(),
+	}
 	eng := &engineImpl{
 		onSockets:  make([]func(Socket), 0),
 		options:    &clone,
-		sockets:    cmap.New(),
+		sockets:    &sockets,
 		path:       p.path,
 		sidGen:     p.gen,
 		junkKiller: make(chan struct{}),
@@ -315,33 +299,55 @@ func (p *engineBuilder) Build() Engine {
 	return eng
 }
 
-func parseTransportType(s string) (TransportType, error) {
-	switch s {
-	default:
-		return -1, errors.New("invalid transport " + s)
-	case "polling":
-		return POLLING, nil
-	case "websocket":
-		return WEBSOCKET, nil
+type socketMap struct {
+	smap cmap.ConcurrentMap
+}
+
+func (p *socketMap) Get(id string) (*socketImpl, bool) {
+	val, ok := p.smap.Get(id)
+	if ok {
+		return val.(*socketImpl), ok
+	}
+	return nil, ok
+}
+
+func (p *socketMap) Put(socket *socketImpl) {
+	if ok := p.smap.SetIfAbsent(socket.ID(), socket); !ok {
+		panic(fmt.Errorf("socket#%s exists already", socket.ID()))
 	}
 }
 
-func bind(tp Transport, socket *socketImpl) {
-	socket.setTransport(tp)
-	tp.setSocket(socket)
+func (p *socketMap) Remove(socket *socketImpl) {
+	p.smap.Remove(socket.ID())
 }
 
-func NewEngineBuilder() *engineBuilder {
+func (p *socketMap) Count() int {
+	return p.smap.Count()
+}
+
+func (p *socketMap) List(filter func(impl *socketImpl) bool) []*socketImpl {
+	ret := make([]*socketImpl, 0)
+	for ent := range p.smap.IterBuffered() {
+		it := ent.Val.(*socketImpl)
+		if filter == nil || filter(it) {
+			ret = append(ret, it)
+		}
+	}
+	return ret
+}
+
+// NewEngineBuilder create a builder for Engine.
+func NewEngineBuilder() *EngineBuilder {
 	options := engineOptions{
 		cookie:        false,
 		pingInterval:  25000,
 		pingTimeout:   60000,
 		allowUpgrades: true,
 	}
-	builder := engineBuilder{
-		path:    DEFAULT_PATH,
+	builder := EngineBuilder{
+		path:    DefaultPath,
 		options: &options,
-		gen:     randomSessionId,
+		gen:     randomSessionID,
 	}
 	return &builder
 }

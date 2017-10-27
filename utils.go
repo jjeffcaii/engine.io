@@ -1,4 +1,4 @@
-package engine_io
+package eio
 
 import (
 	"bytes"
@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/golang/glog"
 )
 
 var emptyStringArray = make([]string, 0)
@@ -26,17 +28,19 @@ func sendError(writer http.ResponseWriter, e error, codes ...int) {
 	if len(codes) > 1 {
 		bizCode = codes[1]
 	}
-	writer.WriteHeader(httpCode)
 	writer.Header().Set("Content-Type", "application/json; charset=UTF8")
+	writer.WriteHeader(httpCode)
 	foo := struct {
 		Code    int    `json:"code"`
 		Message string `json:"message"`
 	}{bizCode, e.Error()}
-	bs, _ := json.Marshal(&foo)
-	writer.Write(bs)
+	if err := json.NewEncoder(writer).Encode(&foo); err != nil {
+		panic(err)
+	}
+	glog.Warningln("ERR:", e)
 }
 
-func randomSessionId(seed uint32) string {
+func randomSessionID(seed uint32) string {
 	bf := new(bytes.Buffer)
 	for i := 0; i < 12; i++ {
 		bf.WriteByte(byte(rand.Int31n(256)))

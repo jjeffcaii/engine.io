@@ -1,9 +1,8 @@
-package engine_io
+package eio
 
 import (
 	"errors"
 	"fmt"
-	"sync"
 	"sync/atomic"
 
 	"github.com/golang/glog"
@@ -20,14 +19,12 @@ type socketImpl struct {
 	errorHandlers   []func(err error)
 	closeHandlers   []func(reason string)
 
-	locker *sync.RWMutex
-
 	// try read B first. if failed, read A.
 	transportA Transport
 	transportB Transport
 }
 
-func (p *socketImpl) Id() string {
+func (p *socketImpl) ID() string {
 	return p.id
 }
 
@@ -56,13 +53,24 @@ func (p *socketImpl) OnMessage(handler func([]byte)) Socket {
 	if handler == nil {
 		return p
 	}
+
 	p.msgHanders = append(p.msgHanders, func(data []byte) {
 		go func() {
 			defer func() {
-				if e := recover(); e != nil {
-					p.shit(e)
-					glog.Errorln("handle socket message event failed:", e)
+				e := recover()
+				if e == nil {
+					return
 				}
+				err, ok := e.(error)
+				if !ok {
+					return
+				}
+				if p.errorHandlers != nil {
+					for _, fn := range p.errorHandlers {
+						fn(err)
+					}
+				}
+				glog.Errorln("handle socket message event failed:", e)
 			}()
 			handler(data)
 		}()
@@ -75,14 +83,12 @@ func (p *socketImpl) OnError(handler func(error)) Socket {
 		return p
 	}
 	p.errorHandlers = append(p.errorHandlers, func(err error) {
-		go func() {
-			defer func() {
-				if e := recover(); e != nil {
-					glog.Errorln("handle socket error event failed:", e)
-				}
-			}()
-			handler(err)
+		defer func() {
+			if e := recover(); e != nil {
+				glog.Errorln("handle socket error event failed:", e)
+			}
 		}()
+		handler(err)
 	})
 	return p
 }
@@ -110,11 +116,14 @@ func (p *socketImpl) Send(message interface{}) error {
 
 func (p *socketImpl) SendCustom(message interface{}, options parser.PacketOption) error {
 	if atomic.LoadUint32(&(p.heartbeat)) == 0 {
-		return errors.New(fmt.Sprintf("socket#%s is closed", p.id))
+		return fmt.Errorf("socket#%s is closed", p.id)
 	}
 	packet := parser.NewPacketAuto(parser.MESSAGE, message)
 	packet.Option |= options
-	return p.getTransport().write(packet)
+	if p.transportA != nil {
+		return p.transportA.write(packet)
+	}
+	return p.transportB.write(packet)
 }
 
 func (p *socketImpl) Close() {
@@ -122,9 +131,6 @@ func (p *socketImpl) Close() {
 		return
 	}
 	atomic.StoreUint32(&(p.heartbeat), 0)
-	p.locker.Lock()
-	defer p.locker.Unlock()
-
 	var reason string
 	if p.transportB != nil {
 		if err := p.transportB.close(); err != nil {
@@ -144,20 +150,7 @@ func (p *socketImpl) Close() {
 	}
 }
 
-func (p *socketImpl) clearTransports() {
-	p.locker.Lock()
-	defer p.locker.Unlock()
-
-	if p.transportB == nil {
-		return
-	}
-	p.transportA.close()
-	p.transportA = nil
-}
-
 func (p *socketImpl) setTransport(t Transport) error {
-	p.locker.Lock()
-	defer p.locker.Unlock()
 	if p.transportB != nil {
 		return errors.New("transports is full")
 	}
@@ -170,8 +163,6 @@ func (p *socketImpl) setTransport(t Transport) error {
 }
 
 func (p *socketImpl) getTransport() Transport {
-	p.locker.RLock()
-	defer p.locker.RUnlock()
 	if p.transportB != nil {
 		return p.transportB
 	} else if p.transportA != nil {
@@ -182,37 +173,25 @@ func (p *socketImpl) getTransport() Transport {
 }
 
 func (p *socketImpl) getTransportOld() Transport {
-	p.locker.RLock()
-	defer p.locker.RUnlock()
 	if p.transportB == nil || p.transportA == nil {
 		panic("old transport unavailable")
 	}
 	return p.transportA
 }
 
-func (p *socketImpl) shit(e interface{}) {
-	if e == nil {
-		return
-	}
-	err, ok := e.(error)
-	if !ok {
-		return
-	}
-	if p.errorHandlers != nil {
-		for _, fn := range p.errorHandlers {
-			fn(err)
-		}
-	}
-}
-
 func (p *socketImpl) accept(packet *parser.Packet) error {
 	switch packet.Type {
 	default:
-		return errors.New(fmt.Sprintf("unsupport packet: %d", packet.Type))
+		return fmt.Errorf("unsupport packet: %d", packet.Type)
 	case parser.CLOSE:
 		p.Close()
 		break
 	case parser.UPGRADE:
+		// clean transports
+		if p.transportB != nil {
+			p.transportA.close()
+			p.transportA = nil
+		}
 		for _, fn := range p.upgradeHandlers {
 			fn()
 		}
@@ -249,7 +228,6 @@ func newSocket(id string, eng *engineImpl) *socketImpl {
 		upgradeHandlers: make([]func(), 0),
 		msgHanders:      make([]func([]byte), 0),
 		errorHandlers:   make([]func(error), 0),
-		locker:          new(sync.RWMutex),
 	}
 	return socket
 }

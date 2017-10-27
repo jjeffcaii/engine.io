@@ -1,4 +1,4 @@
-package engine_io
+package eio
 
 import (
 	"net/http"
@@ -6,15 +6,20 @@ import (
 	"github.com/jjeffcaii/engine.io/parser"
 )
 
+// TransportType define the type of transport.
 type TransportType int8
 
 const (
-	POLLING   TransportType = iota
+	// POLLING use Polling-XHR as Transport.
+	POLLING TransportType = iota
+	// WEBSOCKET use Websocket as Transport.
 	WEBSOCKET TransportType = iota
 )
 
-var DEFAULT_PATH = "/engine.io/"
+// DefaultPath for engine.io http router.
+var DefaultPath = "/engine.io/"
 
+// Engine is the main server/manager.
 type Engine interface {
 	Router() func(http.ResponseWriter, *http.Request)
 	Listen(addr string) error
@@ -26,6 +31,7 @@ type Engine interface {
 	Debug() string
 }
 
+// Transport is used to control socket.
 type Transport interface {
 	GetType() TransportType
 	GetEngine() Engine
@@ -41,8 +47,9 @@ type Transport interface {
 	close() error
 }
 
+// Socket is a representation of a client.
 type Socket interface {
-	Id() string
+	ID() string
 	Server() Engine
 	OnClose(func(reason string)) Socket
 	OnMessage(func(data []byte)) Socket

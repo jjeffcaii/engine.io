@@ -1,7 +1,6 @@
-package engine_io
+package eio
 
 import (
-	"errors"
 	"fmt"
 
 	"sync"
@@ -15,18 +14,6 @@ type messageOK struct {
 	PingInterval uint32   `json:"pingInterval"`
 	PingTimeout  uint32   `json:"pingTimeout"`
 }
-
-/*type transport interface {
-	//OnFlush() Socket
-	//OnDrain() Socket
-	//OnPacket() Socket
-	transport(ctx *context) error
-	write(packet *parser.Packet) error
-	flush() error
-	close() error
-	getEngine() *engineImpl
-	upgrade() error
-}*/
 
 type tinyTransport struct {
 	eng          *engineImpl
@@ -82,7 +69,7 @@ func (p *tinyTransport) clearSocket() {
 func newTransport(engine *engineImpl, transport TransportType) Transport {
 	switch transport {
 	default:
-		panic(errors.New(fmt.Sprintf("invalid transport '%d'", transport)))
+		panic(fmt.Errorf("invalid transport '%d'", transport))
 	case WEBSOCKET:
 		return newWebsocketTransport(engine)
 	case POLLING:

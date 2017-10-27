@@ -1,10 +1,9 @@
-package engine_io
+package eio
 
 import (
 	"errors"
 	"net/http"
 	"sync"
-	"time"
 
 	"github.com/golang/glog"
 	"github.com/gorilla/websocket"
@@ -13,7 +12,7 @@ import (
 
 var (
 	libWebsocket          *websocket.Upgrader
-	ErrUpgradeWsTransport error
+	errUpgradeWsTransport error
 )
 
 func init() {
@@ -23,7 +22,7 @@ func init() {
 		WriteBufferSize:   1024,
 		EnableCompression: true,
 	}
-	ErrUpgradeWsTransport = errors.New("transport: cannot upgrade websocket transport")
+	errUpgradeWsTransport = errors.New("transport: cannot upgrade websocket transport")
 }
 
 type wsTransport struct {
@@ -44,7 +43,10 @@ func (p *wsTransport) GetSocket() Socket {
 	return p.socket
 }
 
-func (p *wsTransport) ready(writer http.ResponseWriter, request *http.Request) error {
+func (p *wsTransport) ensureWebsocket(writer http.ResponseWriter, request *http.Request) error {
+	if p.connect != nil {
+		return nil
+	}
 	// upgrade to websocket.
 	conn, err := libWebsocket.Upgrade(writer, request, nil)
 	if err != nil {
@@ -53,15 +55,20 @@ func (p *wsTransport) ready(writer http.ResponseWriter, request *http.Request) e
 	}
 	p.connect = conn
 	p.onWrite(func() { p.flush() })
+	return nil
+}
 
+func (p *wsTransport) ready(writer http.ResponseWriter, request *http.Request) error {
+	if err := p.ensureWebsocket(writer, request); err != nil {
+		return err
+	}
 	msgOpen := parser.NewPacketByJSON(parser.OPEN, &messageOK{
 		Sid:          p.socket.id,
 		Upgrades:     emptyStringArray,
 		PingInterval: p.eng.options.pingInterval,
 		PingTimeout:  p.eng.options.pingTimeout,
 	})
-	err = p.write(msgOpen)
-	return err
+	return p.write(msgOpen)
 }
 
 func (p *wsTransport) doAccept(msg []byte, opt parser.PacketOption) {
@@ -79,12 +86,19 @@ func (p *wsTransport) doAccept(msg []byte, opt parser.PacketOption) {
 func (p *wsTransport) doReq(writer http.ResponseWriter, request *http.Request) {
 	defer func() {
 		p.GetSocket().Close()
-		if e := recover(); e != nil {
-			if _, ok := e.(*websocket.CloseError); !ok {
-				glog.Errorln(e)
-			}
+		e := recover()
+		if e == nil {
+			return
 		}
+		if _, ok := e.(*websocket.CloseError); ok {
+			return
+		}
+		glog.Errorln("transport:", e)
 	}()
+
+	if err := p.ensureWebsocket(writer, request); err != nil {
+		panic(err)
+	}
 	// read messages
 	for {
 		t, message, err := p.connect.ReadMessage()
@@ -105,7 +119,7 @@ func (p *wsTransport) doReq(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (p *wsTransport) doUpgrade() error {
-	return ErrUpgradeWsTransport
+	return errUpgradeWsTransport
 }
 
 func (p *wsTransport) write(packet *parser.Packet) error {
@@ -140,11 +154,11 @@ func (p *wsTransport) flush() error {
 			return err
 		}
 		if out.Type == parser.PONG && string(out.Data[:5]) == "probe" {
-			// ensure upgrade
-			time.AfterFunc(100*time.Millisecond, func() {
-				// TODO: make upgrade
-				// p.socket.getFirstTransport().upgrade()
-			})
+			// TODO: ensure upgrade
+			p.socket.getTransportOld().doUpgrade()
+			/*time.AfterFunc(500*time.Millisecond, func() {
+				p.socket.getTransportOld().doUpgrade()
+			})*/
 		}
 	}
 	if p.handlerFlush != nil {
@@ -154,6 +168,9 @@ func (p *wsTransport) flush() error {
 }
 
 func (p *wsTransport) close() error {
+	if p.connect == nil {
+		return nil
+	}
 	return p.connect.Close()
 }
 
