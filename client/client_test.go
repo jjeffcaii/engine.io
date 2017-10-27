@@ -1,4 +1,4 @@
-package engine_io
+package eio
 
 import (
 	"flag"

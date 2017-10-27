@@ -1,4 +1,4 @@
-package engine_io
+package eio
 
 type clientOptions struct {
 	addr       string
@@ -6,20 +6,24 @@ type clientOptions struct {
 	binaryType string
 }
 
-type MESSAGE_TYPE uint8
+//define MessageType
+type MessageType uint8
 
 const (
-	STRING_MSG MESSAGE_TYPE = 0x01
-	BINARY_MSG MESSAGE_TYPE = 0x01 << 1
+	//message type is string
+	StringMsg MessageType = 0x01
+	//message type is binary
+	BinbaryMsg MessageType = 0x01 << 1
 )
 
-type WSClient interface {
+//define a web socket client
+type WebSocketClient interface {
 	Connect(options *clientOptions)
 }
 
 type ClientSocket interface {
 	OnOpen(func()) ClientSocket
-	OnMessage(func(messageType MESSAGE_TYPE, data interface{})) ClientSocket
+	OnMessage(func(messageType MessageType, data interface{})) ClientSocket
 	OnClose(func()) ClientSocket
 	OnPing(func()) ClientSocket
 	OnPong(func()) ClientSocket
