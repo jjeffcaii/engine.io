@@ -13,20 +13,20 @@ import (
 	"flag"
 	"log"
 
-	eio "github.com/jjeffcaii/engine.io"
+	"github.com/jjeffcaii/engine.io"
 )
 
 func main() {
 	flag.Parse()
 	server := eio.NewEngineBuilder().Build()
 	server.OnConnect(func(socket eio.Socket) {
-		socket.Send("Hello world!")
 		socket.OnMessage(func(data []byte) {
 			log.Println("recieve:", string(data))
 		})
 		socket.OnClose(func(reason string) {
-			log.Println("socket closed: ", socket.Id())
+			log.Println("socket closed:", socket.ID())
 		})
+		socket.Send("你好,世界!")
 	})
 	log.Fatalln(server.Listen(":3000"))
 }
