@@ -8,8 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"strings"
-
 	"github.com/golang/glog"
 	"github.com/orcaman/concurrent-map"
 )
@@ -35,7 +33,7 @@ type engineImpl struct {
 	path            string
 	options         *engineOptions
 	onSockets       []func(Socket)
-	sockets         cmap.ConcurrentMap
+	sockets         *socketMap
 	junkKiller      chan struct{}
 	junkTicker      *time.Ticker
 	gets            int32
@@ -120,11 +118,11 @@ func (p *engineImpl) Router() func(http.ResponseWriter, *http.Request) {
 				return
 			}
 			socket.OnClose(func(reason string) {
-				p.removeSocket(socket)
+				p.sockets.Remove(socket)
 			})
-			p.putSocket(socket)
+			p.sockets.Put(socket)
 			p.socketCreated(socket)
-		} else if socket0, ok := p.getSocket(sid); !ok {
+		} else if socket0, ok := p.sockets.Get(sid); !ok {
 			sendError(writer, errors.New(fmt.Sprintf("socket#%s doesn't exist", sid)))
 			return
 		} else {
@@ -132,9 +130,8 @@ func (p *engineImpl) Router() func(http.ResponseWriter, *http.Request) {
 			tp0 := socket0.getTransport()
 			ttype0 := tp0.GetType()
 			if ttype > ttype0 {
-				tp := newTransport(p, ttype)
+				tp = newTransport(p, ttype)
 				bind(tp, socket)
-				// TODO: need upgrade
 			} else if ttype < ttype0 {
 				// TODO: use old transport
 				tp = socket0.getTransportOld()
@@ -160,11 +157,11 @@ func (p *engineImpl) GetProtocol() uint8 {
 }
 
 func (p *engineImpl) GetClients() map[string]Socket {
-	snapshot := make(map[string]Socket)
-	for entry := range p.sockets.IterBuffered() {
-		snapshot[entry.Key] = entry.Val.(Socket)
+	m := make(map[string]Socket)
+	for _, it := range p.sockets.List(nil) {
+		m[it.Id()] = it
 	}
-	return snapshot
+	return m
 }
 
 func (p *engineImpl) CountClients() int {
@@ -176,31 +173,8 @@ func (p *engineImpl) OnConnect(onConn func(socket Socket)) Engine {
 	return p
 }
 
-func (p *engineImpl) removeSocket(socket *socketImpl) {
-	p.sockets.Remove(socket.id)
-}
-
 func (p *engineImpl) generateId() string {
 	return p.sidGen(atomic.AddUint32(&(p.sequence), 1))
-}
-
-func (p *engineImpl) putSocket(socket *socketImpl) {
-	sid := socket.id
-	if !p.sockets.SetIfAbsent(sid, socket) {
-		panic(errors.New(fmt.Sprintf("socket#%s exists already", sid)))
-	}
-}
-
-func (p *engineImpl) getSocket(id string) (*socketImpl, bool) {
-	if socket, ok := p.sockets.Get(id); ok {
-		return socket.(*socketImpl), ok
-	} else {
-		return nil, ok
-	}
-}
-
-func (p *engineImpl) hasSocket(id string) bool {
-	return p.sockets.Has(id)
 }
 
 func (p *engineImpl) ensureCleaner() {
@@ -213,20 +187,14 @@ func (p *engineImpl) ensureCleaner() {
 		for {
 			select {
 			case <-p.junkTicker.C:
-				losts := make([]*socketImpl, 0)
-				for entry := range p.sockets.IterBuffered() {
-					it := entry.Val.(*socketImpl)
-					if it.isLost() {
-						losts = append(losts, it)
-					}
-				}
+				losts := p.sockets.List(func(val *socketImpl) bool {
+					return val.isLost()
+				})
 				if len(losts) > 0 {
-					lostIds := make([]string, 0)
 					for _, it := range losts {
 						it.Close()
-						lostIds = append(lostIds, it.id)
 					}
-					glog.Infof("***** kill %d DEAD sockets: %s *****\n", len(losts), strings.Join(lostIds, ","))
+					glog.Infof("***** kill %d DEAD sockets *****\n", len(losts))
 				}
 				break
 			case <-p.junkKiller:
@@ -294,11 +262,13 @@ func (p *engineBuilder) Build() Engine {
 	clone := func(origin engineOptions) engineOptions {
 		return origin
 	}(*p.options)
-
+	sockets := socketMap{
+		smap: cmap.New(),
+	}
 	eng := &engineImpl{
 		onSockets:  make([]func(Socket), 0),
 		options:    &clone,
-		sockets:    cmap.New(),
+		sockets:    &sockets,
 		path:       p.path,
 		sidGen:     p.gen,
 		junkKiller: make(chan struct{}),
@@ -329,6 +299,43 @@ func parseTransportType(s string) (TransportType, error) {
 func bind(tp Transport, socket *socketImpl) {
 	socket.setTransport(tp)
 	tp.setSocket(socket)
+}
+
+type socketMap struct {
+	smap cmap.ConcurrentMap
+}
+
+func (p *socketMap) Get(id string) (*socketImpl, bool) {
+	if val, ok := p.smap.Get(id); ok {
+		return val.(*socketImpl), ok
+	} else {
+		return nil, ok
+	}
+}
+
+func (p *socketMap) Put(socket *socketImpl) {
+	if ok := p.smap.SetIfAbsent(socket.Id(), socket); !ok {
+		panic(errors.New(fmt.Sprintf("socket#%s exists already", socket.Id())))
+	}
+}
+
+func (p *socketMap) Remove(socket *socketImpl) {
+	p.smap.Remove(socket.Id())
+}
+
+func (p *socketMap) Count() int {
+	return p.smap.Count()
+}
+
+func (p *socketMap) List(filter func(impl *socketImpl) bool) []*socketImpl {
+	ret := make([]*socketImpl, 0)
+	for ent := range p.smap.IterBuffered() {
+		it := ent.Val.(*socketImpl)
+		if filter == nil || filter(it) {
+			ret = append(ret, it)
+		}
+	}
+	return ret
 }
 
 func NewEngineBuilder() *engineBuilder {

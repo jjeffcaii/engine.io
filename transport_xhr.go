@@ -82,13 +82,10 @@ func (p *xhrTransport) doReq(writer http.ResponseWriter, request *http.Request) 
 		var err error
 		defer func() {
 			if err == nil {
-				writer.WriteHeader(http.StatusOK)
 				writer.Header().Set("Content-Type", "text/html; charset=UTF-8")
 				writer.Write([]byte("ok"))
 			} else {
-				writer.WriteHeader(http.StatusInternalServerError)
-				writer.Header().Set("Content-Type", "application/json; charset=UTF-8")
-				sendError(writer, err)
+				sendError(writer, err, http.StatusInternalServerError)
 			}
 		}()
 		// read body

@@ -26,14 +26,15 @@ func sendError(writer http.ResponseWriter, e error, codes ...int) {
 	if len(codes) > 1 {
 		bizCode = codes[1]
 	}
-	writer.WriteHeader(httpCode)
 	writer.Header().Set("Content-Type", "application/json; charset=UTF8")
+	writer.WriteHeader(httpCode)
 	foo := struct {
 		Code    int    `json:"code"`
 		Message string `json:"message"`
 	}{bizCode, e.Error()}
-	bs, _ := json.Marshal(&foo)
-	writer.Write(bs)
+	if err := json.NewEncoder(writer).Encode(&foo); err != nil {
+		panic(err)
+	}
 }
 
 func randomSessionId(seed uint32) string {
