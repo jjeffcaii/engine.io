@@ -16,8 +16,12 @@ func TestEncode(t *testing.T) {
 	}
 	ts := time.Now().UnixNano()
 	for _, it := range packets {
-		if _, err := Encode(it); err != nil {
+		if bytes, err := Encode(it); err != nil {
 			t.Error(err)
+		} else {
+			if _, err := Decode(bytes, 0); err != nil {
+				t.Error(err)
+			}
 		}
 	}
 	ts = time.Now().UnixNano() - ts
