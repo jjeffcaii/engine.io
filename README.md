@@ -32,3 +32,18 @@ func main() {
 }
 
 ```
+
+## Compatibility
+
+| Key | Is Compatible | Remarks |
+|------|-----|------|
+| polling-xhr | Yes | |
+| polling-jsonp | No | still working on it. |
+| websocket | Yes | |
+| upgrade | Yes | |
+
+> NOTICE: my tests use engine.io-client^3.1.2
+
+## Benchmarks
+
+TODO
