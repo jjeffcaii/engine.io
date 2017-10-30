@@ -10,5 +10,5 @@ before_install:
   - dep ensure
 
 script:
-  - golint .
+  - golint . parser
   - go test ./parser -v
