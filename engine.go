@@ -4,11 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/orcaman/concurrent-map"
 )
 
 var (
@@ -204,11 +204,11 @@ func (p *engineImpl) socketCreated(socket *socketImpl) {
 }
 
 type socketMap struct {
-	smap cmap.ConcurrentMap
+	store *sync.Map
 }
 
 func (p *socketMap) Get(id string) (*socketImpl, bool) {
-	val, ok := p.smap.Get(id)
+	val, ok := p.store.Load(id)
 	if ok {
 		return val.(*socketImpl), ok
 	}
@@ -216,26 +216,32 @@ func (p *socketMap) Get(id string) (*socketImpl, bool) {
 }
 
 func (p *socketMap) Put(socket *socketImpl) {
-	if ok := p.smap.SetIfAbsent(socket.ID(), socket); !ok {
+	if _, ok := p.store.LoadOrStore(socket.ID(), socket); ok {
 		panic(fmt.Errorf("socket#%s exists already", socket.ID()))
 	}
 }
 
 func (p *socketMap) Remove(socket *socketImpl) {
-	p.smap.Remove(socket.ID())
+	p.store.Delete(socket.ID())
 }
 
 func (p *socketMap) Count() int {
-	return p.smap.Count()
+	var c int
+	p.store.Range(func(_, _ interface{}) bool {
+		c++
+		return true
+	})
+	return c
 }
 
 func (p *socketMap) List(filter func(impl *socketImpl) bool) []*socketImpl {
 	ret := make([]*socketImpl, 0)
-	for ent := range p.smap.IterBuffered() {
-		it := ent.Val.(*socketImpl)
+	p.store.Range(func(key, value interface{}) bool {
+		it := value.(*socketImpl)
 		if filter == nil || filter(it) {
 			ret = append(ret, it)
 		}
-	}
+		return true
+	})
 	return ret
 }

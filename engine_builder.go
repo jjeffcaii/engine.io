@@ -3,7 +3,7 @@ package eio
 import (
 	"math/rand"
 
-	"github.com/orcaman/concurrent-map"
+	"sync"
 )
 
 const (
@@ -63,7 +63,7 @@ func (p *EngineBuilder) Build() Engine {
 		return origin
 	}(*p.options)
 	sockets := socketMap{
-		smap: cmap.New(),
+		store: new(sync.Map),
 	}
 	eng := &engineImpl{
 		sequence:   rand.Uint32(),

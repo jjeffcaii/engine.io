@@ -13,15 +13,9 @@
   revision = "ea4d1f681babbce9545c9c5f3d5194a789c89f5b"
   version = "v1.2.0"
 
-[[projects]]
-  branch = "master"
-  name = "github.com/orcaman/concurrent-map"
-  packages = ["."]
-  revision = "2ae17bc4c860c83513ee50feb9746f3e50d7515d"
-
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "304d485b6748199fdeb170890ddb03a402effed3ac1da88363821967b297df41"
+  inputs-digest = "3cb19e40fea49e3ff783e4786403e52108f1777248e60a49ba031e6f18c566e9"
   solver-name = "gps-cdcl"
   solver-version = 1
