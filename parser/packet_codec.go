@@ -5,11 +5,13 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 )
 
 type packetCodec interface {
 	decode(data []byte) (*Packet, error)
 	encode(packet *Packet) ([]byte, error)
+	writeTo(writer io.Writer, packet *Packet) error
 }
 
 var (
@@ -34,15 +36,23 @@ func (p *binCodec) decode(data []byte) (*Packet, error) {
 	}
 }
 
+func (p *binCodec) writeTo(writer io.Writer, packet *Packet) error {
+	if _, err := writer.Write([]byte{byte(packet.Type)}); err != nil {
+		return err
+	}
+	if packet.Data == nil || len(packet.Data) < 1 {
+		return nil
+	}
+	_, err := writer.Write(packet.Data)
+	return err
+}
+
 func (p *binCodec) encode(packet *Packet) ([]byte, error) {
 	bf := new(bytes.Buffer)
-	if err := bf.WriteByte(byte(packet.Type)); err != nil {
+	if err := p.writeTo(bf, packet); err != nil {
 		return nil, err
-	} else if _, err := bf.Write(packet.Data); err != nil {
-		return nil, err
-	} else {
-		return bf.Bytes(), nil
 	}
+	return bf.Bytes(), nil
 }
 
 type strCodec struct {
@@ -59,19 +69,25 @@ func (p *strCodec) decode(data []byte) (*Packet, error) {
 	return NewPacketCustom(t, data[1:], 0), nil
 }
 
+func (p *strCodec) writeTo(writer io.Writer, packet *Packet) error {
+	var t byte
+	var err error
+	if t, err = convertTypeToChar(packet.Type); err != nil {
+		return err
+	}
+	if _, err = writer.Write([]byte{t}); err != nil {
+		return err
+	}
+	_, err = writer.Write(packet.Data)
+	return err
+}
+
 func (p *strCodec) encode(packet *Packet) ([]byte, error) {
-	c, err := convertTypeToChar(packet.Type)
-	if err != nil {
-		return nil, err
-	}
 	bf := new(bytes.Buffer)
-	if err := bf.WriteByte(c); err != nil {
+	if err := p.writeTo(bf, packet); err != nil {
 		return nil, err
-	} else if _, err := bf.Write(packet.Data); err != nil {
-		return nil, err
-	} else {
-		return bf.Bytes(), nil
 	}
+	return bf.Bytes(), nil
 }
 
 type b64Codec struct {
@@ -101,26 +117,32 @@ func (p *b64Codec) decode(data []byte) (*Packet, error) {
 	}
 }
 
-func (p *b64Codec) encode(packet *Packet) ([]byte, error) {
-	c, err := convertTypeToChar(packet.Type)
-	if err != nil {
-		return nil, err
+func (p *b64Codec) writeTo(writer io.Writer, packet *Packet) error {
+	var t byte
+	var err error
+	if t, err = convertTypeToChar(packet.Type); err != nil {
+		return err
 	}
-	bf := new(bytes.Buffer)
 	if packet.Data == nil || len(packet.Data) < 1 {
-		if err := bf.WriteByte(c); err != nil {
-			return nil, err
+		if _, err = writer.Write([]byte{t}); err != nil {
+			return err
 		}
-		return bf.Bytes(), err
+		return nil
 	}
-	if err := bf.WriteByte('b'); err != nil {
-		return nil, err
+	if _, err = writer.Write([]byte{'b'}); err != nil {
+		return err
 	}
-	if err := bf.WriteByte(c); err != nil {
-		return nil, err
+	if _, err = writer.Write([]byte{t}); err != nil {
+		return err
 	}
 	body := base64.StdEncoding.EncodeToString(packet.Data)
-	if _, err := bf.WriteString(body); err != nil {
+	_, err = writer.Write([]byte(body))
+	return err
+}
+
+func (p *b64Codec) encode(packet *Packet) ([]byte, error) {
+	bf := new(bytes.Buffer)
+	if err := p.writeTo(bf, packet); err != nil {
 		return nil, err
 	}
 	return bf.Bytes(), nil

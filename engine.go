@@ -199,14 +199,7 @@ func (p *engineImpl) socketCreated(socket *socketImpl) {
 		return
 	}
 	for _, fn := range p.onSockets {
-		go func() {
-			defer func() {
-				if e := recover(); e != nil {
-					glog.Errorln("handle socket connect failed:", e)
-				}
-			}()
-			fn(socket)
-		}()
+		fn(socket)
 	}
 }
 

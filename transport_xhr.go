@@ -12,6 +12,10 @@ import (
 	"github.com/jjeffcaii/engine.io/parser"
 )
 
+const (
+	noopDelay = 1 * time.Second
+)
+
 var (
 	errHTTPMethod = errors.New("transport: illegal http method")
 	errPollingEOF = errors.New("transport: polling EOF")
@@ -73,8 +77,10 @@ func (p *xhrTransport) doReq(writer http.ResponseWriter, request *http.Request) 
 			p.res = nil
 		}()
 		if err := p.flush(); err == errPollingEOF {
-			bs, _ := parser.EncodePayload(parser.NewPacketCustom(parser.CLOSE, make([]byte, 0), 0))
-			p.res.Write(bs)
+			closePacket := parser.NewPacketCustom(parser.CLOSE, make([]byte, 0), 0)
+			if err := parser.WritePayloadTo(p.res, closePacket); err != nil {
+				glog.Errorln("write close packet failed:", err)
+			}
 			p.socket.Close()
 			p.socket = nil
 		}
@@ -175,12 +181,24 @@ func (p *xhrTransport) flush() error {
 			//queue = append(queue, parser.NewPacketCustom(parser.CLOSE, make([]byte, 0), 0))
 		}
 	}
-	bs, err := parser.EncodePayload(queue...)
-	if err != nil {
-		return err
+	if len(queue) == 1 {
+		if queue[0].Type == parser.NOOP {
+			time.Sleep(noopDelay)
+		}
+		return parser.WritePayloadTo(p.res, queue[0])
 	}
-	_, err = p.res.Write(bs)
-	return err
+	nooped := false
+	for _, v := range queue {
+		if v.Type == parser.NOOP && !nooped {
+			nooped = true
+			p.write(v)
+			continue
+		}
+		if err := parser.WritePayloadTo(p.res, v); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (p *xhrTransport) close() error {

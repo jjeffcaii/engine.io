@@ -170,6 +170,15 @@ func (p *socketImpl) getTransport() Transport {
 	}
 }
 
+func (p *socketImpl) clearTransport() error {
+	if p.transportPrimary == nil || p.transportBackup == nil {
+		return nil
+	}
+	kill := p.transportBackup
+	p.transportBackup = nil
+	return kill.close()
+}
+
 func (p *socketImpl) getTransportOld() Transport {
 	if p.transportPrimary == nil || p.transportBackup == nil {
 		panic("old transport unavailable")
@@ -185,11 +194,7 @@ func (p *socketImpl) accept(packet *parser.Packet) error {
 		p.Close()
 		break
 	case parser.UPGRADE:
-		// clean transports
-		if p.transportPrimary != nil {
-			p.transportBackup.close()
-			p.transportBackup = nil
-		}
+		p.clearTransport()
 		for _, fn := range p.upgradeHandlers {
 			fn()
 		}

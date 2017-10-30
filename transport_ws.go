@@ -77,6 +77,7 @@ func (p *wsTransport) doAccept(msg []byte, opt parser.PacketOption) {
 		glog.Errorln("decode packet failed:", err)
 		panic(err)
 	}
+
 	err = p.socket.accept(pack)
 	if err != nil {
 		panic(err)
@@ -99,6 +100,7 @@ func (p *wsTransport) doReq(writer http.ResponseWriter, request *http.Request) {
 	if err := p.ensureWebsocket(writer, request); err != nil {
 		panic(err)
 	}
+
 	// read messages
 	for {
 		t, message, err := p.connect.ReadMessage()
@@ -153,12 +155,9 @@ func (p *wsTransport) flush() error {
 		if err != nil {
 			return err
 		}
-		if out.Type == parser.PONG && string(out.Data[:5]) == "probe" {
+		if out.Type == parser.PONG && out.Data != nil && len(out.Data) == 5 && string(out.Data[:5]) == "probe" {
 			// TODO: ensure upgrade
 			p.socket.getTransportOld().doUpgrade()
-			/*time.AfterFunc(500*time.Millisecond, func() {
-				p.socket.getTransportOld().doUpgrade()
-			})*/
 		}
 	}
 	if p.handlerFlush != nil {

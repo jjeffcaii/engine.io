@@ -4,22 +4,33 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"unicode/utf8"
 )
 
+var errEmptyPackets = errors.New("input packets is empty")
+
 // EncodePayload encode multi packets to payload bytes.
 func EncodePayload(packets ...*Packet) ([]byte, error) {
-	if len(packets) < 1 {
-		return nil, errors.New("input packets is empty")
-	}
 	bf := new(bytes.Buffer)
-	for _, it := range packets {
-		if err := writePacket(bf, it); err != nil {
-			return nil, err
-		}
+	if err := WritePayloadTo(bf, packets...); err != nil {
+		return nil, err
 	}
 	return bf.Bytes(), nil
+}
+
+// WritePayloadTo encode multi packets and write to writer.
+func WritePayloadTo(writer io.Writer, packets ...*Packet) error {
+	if len(packets) < 1 {
+		return errEmptyPackets
+	}
+	for _, it := range packets {
+		if err := writePacket(writer, it); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DecodePayload decode multi packets from payload bytes.
@@ -82,7 +93,7 @@ func readPacketString(input []byte, size int) ([]byte, []byte, error) {
 	return input[:i], input[i:], nil
 }
 
-func writePacket(bf *bytes.Buffer, packet *Packet) error {
+func writePacket(writer io.Writer, packet *Packet) error {
 	var data []byte
 	var err error
 	var length int
@@ -99,11 +110,11 @@ func writePacket(bf *bytes.Buffer, packet *Packet) error {
 		}
 		length = len(data)
 	}
-	_, err = bf.WriteString(fmt.Sprintf("%d:", length))
+	_, err = writer.Write([]byte(fmt.Sprintf("%d:", length)))
 	if err != nil {
 		return err
 	}
-	_, err = bf.Write(data)
+	_, err = writer.Write(data)
 	if err != nil {
 		return err
 	}

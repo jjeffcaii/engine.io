@@ -1,15 +1,13 @@
 package example
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
-	"time"
-
-	"flag"
-
 	"testing"
+	"time"
 
 	"github.com/jjeffcaii/engine.io"
 )
@@ -23,11 +21,6 @@ func init() {
 		writer.WriteHeader(http.StatusOK)
 		writer.Write([]byte(fmt.Sprintf("totals: %d", server.CountClients())))
 	})
-	http.HandleFunc("/foobar", func(writer http.ResponseWriter, request *http.Request) {
-		writer.WriteHeader(http.StatusOK)
-		writer.Write([]byte(server.Debug()))
-	})
-
 }
 
 func TestNothing(t *testing.T) {
