@@ -35,7 +35,7 @@ func main() {
 
 ## Compatibility
 
-| Key | Is Compatible | Remarks |
+| Key | Compatible | Remarks |
 |------|-----|------|
 | polling-xhr | Yes | |
 | polling-jsonp | No | still working on it. |
