@@ -73,7 +73,7 @@ func (p *xhrTransport) doReq(writer http.ResponseWriter, request *http.Request) 
 			p.res = nil
 		}()
 		if err := p.flush(); err == errPollingEOF {
-			bs, _ := parser.Payload.Encode(parser.NewPacketCustom(parser.CLOSE, make([]byte, 0), 0))
+			bs, _ := parser.EncodePayload(parser.NewPacketCustom(parser.CLOSE, make([]byte, 0), 0))
 			p.res.Write(bs)
 			p.socket.Close()
 			p.socket = nil
@@ -97,7 +97,7 @@ func (p *xhrTransport) doReq(writer http.ResponseWriter, request *http.Request) 
 		}
 		// extract packets
 		var packets []*parser.Packet
-		packets, err = parser.Payload.Decode(body)
+		packets, err = parser.DecodePayload(body)
 		if err != nil {
 			return
 		}
@@ -175,7 +175,7 @@ func (p *xhrTransport) flush() error {
 			//queue = append(queue, parser.NewPacketCustom(parser.CLOSE, make([]byte, 0), 0))
 		}
 	}
-	bs, err := parser.Payload.Encode(queue...)
+	bs, err := parser.EncodePayload(queue...)
 	if err != nil {
 		return err
 	}

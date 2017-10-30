@@ -1,7 +1,6 @@
 package eio
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -36,41 +35,6 @@ type engineImpl struct {
 	sockets         *socketMap
 	junkKiller      chan struct{}
 	junkTicker      *time.Ticker
-	gets            int32
-	posts           int32
-}
-
-func (p *engineImpl) Debug() string {
-	m := make(map[string]int32)
-	m["gets"] = atomic.LoadInt32(&(p.gets))
-	m["posts"] = atomic.LoadInt32(&(p.posts))
-	bs, _ := json.Marshal(m)
-	return string(bs)
-}
-
-func (p *engineImpl) checkVersion(v string) error {
-	if v != protocolVersion.s {
-		return fmt.Errorf("illegal protocol version: EIO=%s", v)
-	}
-	return nil
-}
-
-func (p *engineImpl) checkTransport(qTransport string) (TransportType, error) {
-	var t TransportType
-	switch qTransport {
-	default:
-		return -1, fmt.Errorf("invalid transport '%s'", qTransport)
-	case "polling":
-		t = POLLING
-	case "websocket":
-		t = WEBSOCKET
-	}
-	for _, it := range p.allowTransports {
-		if t == it {
-			return t, nil
-		}
-	}
-	return -1, fmt.Errorf("transport '%s' is forbiden", qTransport)
 }
 
 func (p *engineImpl) Router() func(http.ResponseWriter, *http.Request) {
@@ -85,16 +49,7 @@ func (p *engineImpl) Router() func(http.ResponseWriter, *http.Request) {
 			return
 		}
 		query := request.URL.Query()
-		if request.Method == http.MethodGet {
-			atomic.AddInt32(&(p.gets), 1)
-			defer atomic.AddInt32(&(p.gets), -1)
-		} else if request.Method == http.MethodPost {
-			atomic.AddInt32(&(p.posts), 1)
-			defer atomic.AddInt32(&(p.posts), -1)
-		}
-
 		var err error
-
 		// check protocol version
 		if err = p.checkVersion(query.Get("EIO")); err != nil {
 			sendError(writer, err, http.StatusBadRequest)
@@ -179,7 +134,35 @@ func (p *engineImpl) OnConnect(onConn func(socket Socket)) Engine {
 	return p
 }
 
+func (p *engineImpl) checkVersion(v string) error {
+	if v != protocolVersion.s {
+		return fmt.Errorf("illegal protocol version: EIO=%s", v)
+	}
+	return nil
+}
+
+func (p *engineImpl) checkTransport(qTransport string) (TransportType, error) {
+	var t TransportType
+	switch qTransport {
+	default:
+		return -1, fmt.Errorf("invalid transport '%s'", qTransport)
+	case "polling":
+		t = POLLING
+	case "websocket":
+		t = WEBSOCKET
+	}
+	for _, it := range p.allowTransports {
+		if t == it {
+			return t, nil
+		}
+	}
+	return -1, fmt.Errorf("transport '%s' is forbiden", qTransport)
+}
+
 func (p *engineImpl) generateID() string {
+	if atomic.CompareAndSwapUint32(&(p.sequence), 0xFFFF, 0) {
+		return p.sidGen(0)
+	}
 	return p.sidGen(atomic.AddUint32(&(p.sequence), 1))
 }
 
@@ -227,78 +210,6 @@ func (p *engineImpl) socketCreated(socket *socketImpl) {
 	}
 }
 
-// EngineBuilder is a builder for Engine.
-type EngineBuilder struct {
-	allowTransports []TransportType
-	options         *engineOptions
-	path            string
-	gen             func(uint32) string
-}
-
-// SetTransports define transport types allow.
-func (p *EngineBuilder) SetTransports(transports ...TransportType) *EngineBuilder {
-	p.allowTransports = transports
-	return p
-}
-
-// SetGenerateID define the method of creating SocketID.
-func (p *EngineBuilder) SetGenerateID(gen func(uint32) string) *EngineBuilder {
-	p.gen = gen
-	return p
-}
-
-// SetPath define the http router path for Engine.
-func (p *EngineBuilder) SetPath(path string) *EngineBuilder {
-	p.path = path
-	return p
-}
-
-// SetCookie can control enable/disable of cookie.
-func (p *EngineBuilder) SetCookie(enable bool) *EngineBuilder {
-	p.options.cookie = enable
-	return p
-}
-
-// SetPingInterval define ping time interval in millseconds for client.
-func (p *EngineBuilder) SetPingInterval(interval uint32) *EngineBuilder {
-	p.options.pingInterval = interval
-	return p
-}
-
-// SetPingTimeout define ping timeout in millseconds for client.
-func (p *EngineBuilder) SetPingTimeout(timeout uint32) *EngineBuilder {
-	p.options.pingTimeout = timeout
-	return p
-}
-
-// Build returns a new Engine.
-func (p *EngineBuilder) Build() Engine {
-	clone := func(origin engineOptions) engineOptions {
-		return origin
-	}(*p.options)
-	sockets := socketMap{
-		smap: cmap.New(),
-	}
-	eng := &engineImpl{
-		onSockets:  make([]func(Socket), 0),
-		options:    &clone,
-		sockets:    &sockets,
-		path:       p.path,
-		sidGen:     p.gen,
-		junkKiller: make(chan struct{}),
-		junkTicker: nil,
-	}
-	if len(p.allowTransports) < 1 {
-		eng.allowTransports = []TransportType{POLLING, WEBSOCKET}
-	} else {
-		allows := make([]TransportType, 0)
-		copy(allows, p.allowTransports)
-		eng.allowTransports = allows
-	}
-
-	return eng
-}
-
 type socketMap struct {
 	smap cmap.ConcurrentMap
 }
@@ -334,20 +245,4 @@ func (p *socketMap) List(filter func(impl *socketImpl) bool) []*socketImpl {
 		}
 	}
 	return ret
-}
-
-// NewEngineBuilder create a builder for Engine.
-func NewEngineBuilder() *EngineBuilder {
-	options := engineOptions{
-		cookie:        false,
-		pingInterval:  25000,
-		pingTimeout:   60000,
-		allowUpgrades: true,
-	}
-	builder := EngineBuilder{
-		path:    DefaultPath,
-		options: &options,
-		gen:     randomSessionID,
-	}
-	return &builder
 }

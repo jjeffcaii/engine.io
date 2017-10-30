@@ -19,9 +19,7 @@ type socketImpl struct {
 	errorHandlers   []func(err error)
 	closeHandlers   []func(reason string)
 
-	// try read B first. if failed, read A.
-	transportA Transport
-	transportB Transport
+	transportBackup, transportPrimary Transport
 }
 
 func (p *socketImpl) ID() string {
@@ -111,19 +109,19 @@ func (p *socketImpl) OnUpgrade(handler func()) Socket {
 }
 
 func (p *socketImpl) Send(message interface{}) error {
-	return p.SendCustom(message, 0)
+	return p.sendCustom(message, 0)
 }
 
-func (p *socketImpl) SendCustom(message interface{}, options parser.PacketOption) error {
+func (p *socketImpl) sendCustom(message interface{}, options parser.PacketOption) error {
 	if atomic.LoadUint32(&(p.heartbeat)) == 0 {
 		return fmt.Errorf("socket#%s is closed", p.id)
 	}
-	packet := parser.NewPacketAuto(parser.MESSAGE, message)
+	packet := parser.NewPacket(parser.MESSAGE, message)
 	packet.Option |= options
-	if p.transportA != nil {
-		return p.transportA.write(packet)
+	if p.transportBackup != nil {
+		return p.transportBackup.write(packet)
 	}
-	return p.transportB.write(packet)
+	return p.transportPrimary.write(packet)
 }
 
 func (p *socketImpl) Close() {
@@ -132,13 +130,13 @@ func (p *socketImpl) Close() {
 	}
 	atomic.StoreUint32(&(p.heartbeat), 0)
 	var reason string
-	if p.transportB != nil {
-		if err := p.transportB.close(); err != nil {
+	if p.transportPrimary != nil {
+		if err := p.transportPrimary.close(); err != nil {
 			reason += err.Error()
 		}
 	}
-	if p.transportA != nil {
-		if err := p.transportA.close(); err != nil {
+	if p.transportBackup != nil {
+		if err := p.transportBackup.close(); err != nil {
 			if len(reason) > 0 {
 				reason += ", "
 			}
@@ -151,32 +149,32 @@ func (p *socketImpl) Close() {
 }
 
 func (p *socketImpl) setTransport(t Transport) error {
-	if p.transportB != nil {
+	if p.transportPrimary != nil {
 		return errors.New("transports is full")
 	}
-	if p.transportA == nil {
-		p.transportA = t
+	if p.transportBackup == nil {
+		p.transportBackup = t
 	} else {
-		p.transportB = t
+		p.transportPrimary = t
 	}
 	return nil
 }
 
 func (p *socketImpl) getTransport() Transport {
-	if p.transportB != nil {
-		return p.transportB
-	} else if p.transportA != nil {
-		return p.transportA
+	if p.transportPrimary != nil {
+		return p.transportPrimary
+	} else if p.transportBackup != nil {
+		return p.transportBackup
 	} else {
 		panic(errors.New("transport unavailable"))
 	}
 }
 
 func (p *socketImpl) getTransportOld() Transport {
-	if p.transportB == nil || p.transportA == nil {
+	if p.transportPrimary == nil || p.transportBackup == nil {
 		panic("old transport unavailable")
 	}
-	return p.transportA
+	return p.transportBackup
 }
 
 func (p *socketImpl) accept(packet *parser.Packet) error {
@@ -188,9 +186,9 @@ func (p *socketImpl) accept(packet *parser.Packet) error {
 		break
 	case parser.UPGRADE:
 		// clean transports
-		if p.transportB != nil {
-			p.transportA.close()
-			p.transportA = nil
+		if p.transportPrimary != nil {
+			p.transportBackup.close()
+			p.transportBackup = nil
 		}
 		for _, fn := range p.upgradeHandlers {
 			fn()

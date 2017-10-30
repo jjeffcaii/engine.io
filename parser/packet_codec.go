@@ -28,7 +28,7 @@ func (p *binCodec) decode(data []byte) (*Packet, error) {
 	t := PacketType(data[0])
 	switch t {
 	default:
-		return nil, errors.New(fmt.Sprintf("invalid packet type: %d", t))
+		return nil, fmt.Errorf("invalid packet type: %d", t)
 	case OPEN, CLOSE, PING, PONG, MESSAGE, UPGRADE, NOOP:
 		return NewPacketCustom(t, data[1:], BINARY), nil
 	}
@@ -90,7 +90,7 @@ func (p *b64Codec) decode(data []byte) (*Packet, error) {
 		return NewPacketCustom(t, make([]byte, 0), BINARY), nil
 	}
 	if data[0] != 'b' {
-		return nil, errors.New(fmt.Sprintf("invalid b64 packet: %s", data))
+		return nil, fmt.Errorf("invalid b64 packet: %s", data)
 	}
 	if t, err := convertCharToType(data[1]); err != nil {
 		return nil, err
@@ -110,9 +110,8 @@ func (p *b64Codec) encode(packet *Packet) ([]byte, error) {
 	if packet.Data == nil || len(packet.Data) < 1 {
 		if err := bf.WriteByte(c); err != nil {
 			return nil, err
-		} else {
-			return bf.Bytes(), err
 		}
+		return bf.Bytes(), err
 	}
 	if err := bf.WriteByte('b'); err != nil {
 		return nil, err
@@ -130,7 +129,7 @@ func (p *b64Codec) encode(packet *Packet) ([]byte, error) {
 func convertCharToType(c byte) (PacketType, error) {
 	switch c {
 	default:
-		return 0xff, errors.New(fmt.Sprintf("invalid packet type: %s", c))
+		return 0xFF, fmt.Errorf("invalid packet type: %s", c)
 	case '0':
 		return OPEN, nil
 	case '1':
@@ -151,7 +150,7 @@ func convertCharToType(c byte) (PacketType, error) {
 func convertTypeToChar(ptype PacketType) (byte, error) {
 	switch ptype {
 	default:
-		return 0, errors.New(fmt.Sprintf("invalid packet type: %d", ptype))
+		return 0, fmt.Errorf("invalid packet type: %d", ptype)
 	case OPEN:
 		return '0', nil
 	case CLOSE:
