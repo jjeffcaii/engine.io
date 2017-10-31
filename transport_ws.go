@@ -54,7 +54,7 @@ func (p *wsTransport) ensureWebsocket(writer http.ResponseWriter, request *http.
 		return err
 	}
 	p.connect = conn
-	p.onWrite(func() { p.flush() })
+	p.onWrite(func() { p.flush() }, false)
 	return nil
 }
 
@@ -159,7 +159,6 @@ func (p *wsTransport) flush() error {
 			return err
 		}
 		if out.Type == parser.PONG && out.Data != nil && len(out.Data) == 5 && string(out.Data[:5]) == "probe" {
-			// TODO: ensure upgrade
 			p.socket.getTransportOld().upgradeStart(p)
 		}
 	}

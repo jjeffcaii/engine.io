@@ -22,35 +22,58 @@ type tinyTransport struct {
 	handlerFlush func()
 }
 
-func (p *tinyTransport) onWrite(fn func()) {
+func (p *tinyTransport) onWrite(fn func(), async bool) {
 	if fn == nil {
 		return
 	}
-	p.handlerWrite = func() {
-		go func() {
+
+	if async {
+		p.handlerWrite = func() {
+			go func() {
+				defer func() {
+					if e := recover(); e != nil {
+						glog.Errorln("handle write failed:", e)
+					}
+				}()
+				fn()
+			}()
+		}
+	} else {
+		p.handlerWrite = func() {
 			defer func() {
 				if e := recover(); e != nil {
 					glog.Errorln("handle write failed:", e)
 				}
 			}()
 			fn()
-		}()
+		}
 	}
 }
 
-func (p *tinyTransport) onFlush(fn func()) {
+func (p *tinyTransport) onFlush(fn func(), async bool) {
 	if fn == nil {
 		return
 	}
-	p.handlerFlush = func() {
-		go func() {
+	if async {
+		p.handlerFlush = func() {
+			go func() {
+				defer func() {
+					if e := recover(); e != nil {
+						glog.Errorln("handle flush failed:", e)
+					}
+				}()
+				fn()
+			}()
+		}
+	} else {
+		p.handlerFlush = func() {
 			defer func() {
 				if e := recover(); e != nil {
 					glog.Errorln("handle flush failed:", e)
 				}
 			}()
 			fn()
-		}()
+		}
 	}
 
 }

@@ -77,7 +77,7 @@ func init() {
 func TestEchoServer(t *testing.T) {
 	server.OnConnect(func(socket eio.Socket) {
 		socket.OnMessage(func(data []byte) {
-			socket.Send(fmt.Sprintf("[ECHO] %s", data))
+			socket.Send("[ECHO] " + string(data))
 		})
 	})
 	log.Fatalln(server.Listen(":3000"))

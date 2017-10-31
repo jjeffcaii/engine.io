@@ -13,7 +13,8 @@ import (
 )
 
 const (
-	noopDelay = 3 * time.Second
+	noopDelay       = 3 * time.Second
+	outboxThreshold = 32 // The smaller this value, the more GET will be requested.
 )
 
 var (
@@ -169,12 +170,14 @@ func (p *xhrTransport) doReqPost(writer http.ResponseWriter, request *http.Reque
 		return
 	}
 	// notify socket
-	for _, pack := range packets {
-		err = p.socket.accept(pack)
-		if err != nil {
-			return
+	go func() {
+		for _, pack := range packets {
+			err = p.socket.accept(pack)
+			if err != nil {
+				return
+			}
 		}
-	}
+	}()
 }
 
 func (p *xhrTransport) upgradeStart(dest Transport) error {
@@ -183,7 +186,6 @@ func (p *xhrTransport) upgradeStart(dest Transport) error {
 }
 
 func (p *xhrTransport) upgradeEnd(dest Transport) error {
-	// process unsent messages.
 	end := false
 	for {
 		select {
@@ -302,7 +304,7 @@ func newXhrTransport(server *engineImpl) Transport {
 			eng:    server,
 			locker: new(sync.RWMutex),
 		},
-		outbox: make(chan *parser.Packet, 1024),
+		outbox: make(chan *parser.Packet, outboxThreshold),
 	}
 	return &trans
 }

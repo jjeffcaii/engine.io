@@ -96,3 +96,11 @@ func (p *queue) pop() (interface{}, bool) {
 	foo, p.q = p.q[0], p.q[1:]
 	return foo, true
 }
+
+func (p *queue) reset() []interface{} {
+	p.lock.Lock()
+	var ret []interface{}
+	ret, p.q = p.q[:], p.q[:0]
+	p.lock.Unlock()
+	return ret
+}
