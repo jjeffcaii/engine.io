@@ -40,12 +40,11 @@ func TestNothing(t *testing.T) {
 
 func TestEcho(t *testing.T) {
 	server.OnConnect(func(socket eio.Socket) {
-		log.Println("========> socket connect:", socket.ID())
 		socket.OnMessage(func(data []byte) {
 			socket.Send(fmt.Sprintf("ECHO: %s", data))
 		})
-		socket.OnClose(func(reason string) {
-			log.Println("========> socket closed:", socket.ID())
+		socket.OnUpgrade(func() {
+			log.Println("socket", socket.ID(), "upgrade success")
 		})
 	})
 	log.Fatalln(server.Listen(":3000"))

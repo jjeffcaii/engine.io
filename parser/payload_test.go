@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"bytes"
+	"log"
 	"testing"
 )
 
@@ -62,4 +64,16 @@ func TestDecodePayloadBase64(t *testing.T) {
 	if string(packets[0].Data) != exp {
 		t.Error("data should be:", exp)
 	}
+}
+
+func TestEncodeJSONP(t *testing.T) {
+	m := make(map[string]interface{})
+	m["id"] = 1
+	m["content"] = "this is a test content.\nfuck fuck fuck!"
+	packet := NewPacketByJSON(MESSAGE, m)
+	bf := new(bytes.Buffer)
+	if err := WritePayloadTo(bf, true, packet, packet); err != nil {
+		t.Error(err)
+	}
+	log.Println(string(bf.Bytes()))
 }

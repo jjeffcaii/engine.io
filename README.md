@@ -38,11 +38,11 @@ func main() {
 | Key | Compatible | Remarks |
 |------|-----|------|
 | polling-xhr | Yes | |
-| polling-jsonp | No | still working on it. |
+| polling-jsonp | Yes | |
 | websocket | Yes | |
 | upgrade | Yes | |
 
-> NOTICE: my tests use engine.io-client^3.1.2
+> NOTICE: all compatibility tests are under engine.io-client^3.1.2
 
 ## Benchmarks
 

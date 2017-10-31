@@ -109,15 +109,10 @@ func (p *socketImpl) OnUpgrade(handler func()) Socket {
 }
 
 func (p *socketImpl) Send(message interface{}) error {
-	return p.sendCustom(message, 0)
-}
-
-func (p *socketImpl) sendCustom(message interface{}, options parser.PacketOption) error {
 	if atomic.LoadUint32(&(p.heartbeat)) == 0 {
 		return fmt.Errorf("socket#%s is closed", p.id)
 	}
 	packet := parser.NewPacket(parser.MESSAGE, message)
-	packet.Option |= options
 	if p.transportBackup != nil {
 		return p.transportBackup.write(packet)
 	}
@@ -170,15 +165,6 @@ func (p *socketImpl) getTransport() Transport {
 	}
 }
 
-func (p *socketImpl) clearTransport() error {
-	if p.transportPrimary == nil || p.transportBackup == nil {
-		return nil
-	}
-	kill := p.transportBackup
-	p.transportBackup = nil
-	return kill.close()
-}
-
 func (p *socketImpl) getTransportOld() Transport {
 	if p.transportPrimary == nil || p.transportBackup == nil {
 		panic("old transport unavailable")
@@ -194,7 +180,14 @@ func (p *socketImpl) accept(packet *parser.Packet) error {
 		p.Close()
 		break
 	case parser.UPGRADE:
-		p.clearTransport()
+		if p.transportPrimary != nil && p.transportBackup != nil {
+			old := p.transportBackup
+			old.upgradeEnd(p.transportPrimary)
+			p.transportBackup = nil
+			if err := old.close(); err != nil {
+				return err
+			}
+		}
 		for _, fn := range p.upgradeHandlers {
 			fn()
 		}

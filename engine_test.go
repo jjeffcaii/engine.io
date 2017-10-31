@@ -1,6 +1,9 @@
 package eio
 
-import "testing"
+import (
+	"log"
+	"testing"
+)
 
 var server Engine
 
@@ -9,6 +12,7 @@ func init() {
 }
 
 func TestFunction(t *testing.T) {
+	log.Printf("pointer: %p\n", server)
 
 	t.Log("PASS")
 

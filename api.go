@@ -50,7 +50,10 @@ type Transport interface {
 	setSocket(socket Socket)
 	ready(writer http.ResponseWriter, request *http.Request) error
 	doReq(writer http.ResponseWriter, request *http.Request)
-	doUpgrade() error
+
+	upgradeStart(dest Transport) error
+	upgradeEnd(dest Transport) error
+
 	write(packet *parser.Packet) error
 	flush() error
 	close() error

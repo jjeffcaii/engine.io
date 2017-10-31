@@ -120,7 +120,10 @@ func (p *wsTransport) doReq(writer http.ResponseWriter, request *http.Request) {
 	}
 }
 
-func (p *wsTransport) doUpgrade() error {
+func (p *wsTransport) upgradeStart(dest Transport) error {
+	return errUpgradeWsTransport
+}
+func (p *wsTransport) upgradeEnd(dest Transport) error {
 	return errUpgradeWsTransport
 }
 
@@ -157,7 +160,7 @@ func (p *wsTransport) flush() error {
 		}
 		if out.Type == parser.PONG && out.Data != nil && len(out.Data) == 5 && string(out.Data[:5]) == "probe" {
 			// TODO: ensure upgrade
-			p.socket.getTransportOld().doUpgrade()
+			p.socket.getTransportOld().upgradeStart(p)
 		}
 	}
 	if p.handlerFlush != nil {

@@ -6,27 +6,32 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 )
 
-var errEmptyPackets = errors.New("input packets is empty")
+var (
+	errEmptyPackets = errors.New("input packets is empty")
+	jsonpReplacer   = strings.NewReplacer("\\", "\\\\", "\"", "\\\"")
+)
 
 // EncodePayload encode multi packets to payload bytes.
 func EncodePayload(packets ...*Packet) ([]byte, error) {
 	bf := new(bytes.Buffer)
-	if err := WritePayloadTo(bf, packets...); err != nil {
+	if err := WritePayloadTo(bf, false, packets...); err != nil {
 		return nil, err
 	}
 	return bf.Bytes(), nil
 }
 
 // WritePayloadTo encode multi packets and write to writer.
-func WritePayloadTo(writer io.Writer, packets ...*Packet) error {
+func WritePayloadTo(writer io.Writer, jsonp bool, packets ...*Packet) error {
 	if len(packets) < 1 {
 		return errEmptyPackets
 	}
+
 	for _, it := range packets {
-		if err := writePacket(writer, it); err != nil {
+		if err := writePacket(writer, it, jsonp); err != nil {
 			return err
 		}
 	}
@@ -79,7 +84,7 @@ func readPacketLength(input []byte) (int, []byte, error) {
 		}
 		return size, input[i+1:], nil
 	}
-	return 0, nil, errors.New("invalid payload string")
+	return 0, nil, fmt.Errorf("read payload length failed: %s", string(input))
 }
 
 func readPacketString(input []byte, size int) ([]byte, []byte, error) {
@@ -93,7 +98,7 @@ func readPacketString(input []byte, size int) ([]byte, []byte, error) {
 	return input[:i], input[i:], nil
 }
 
-func writePacket(writer io.Writer, packet *Packet) error {
+func writePacket(writer io.Writer, packet *Packet, jsonp bool) error {
 	var data []byte
 	var err error
 	var length int
@@ -114,9 +119,10 @@ func writePacket(writer io.Writer, packet *Packet) error {
 	if err != nil {
 		return err
 	}
-	_, err = writer.Write(data)
-	if err != nil {
-		return err
+	if jsonp {
+		_, err = jsonpReplacer.WriteString(writer, string(data))
+	} else {
+		_, err = writer.Write(data)
 	}
-	return nil
+	return err
 }
