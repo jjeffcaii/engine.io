@@ -76,7 +76,7 @@ func newQueue() *queue {
 
 func (p *queue) size() int {
 	p.lock.RLock()
-	p.lock.RUnlock()
+	defer p.lock.RUnlock()
 	return len(p.q)
 }
 
