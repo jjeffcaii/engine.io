@@ -42,6 +42,7 @@ func main() {
 | websocket | Yes | |
 | upgrade | Yes | |
 
+
 > NOTICE: all compatibility tests are under engine.io-client^3.1.2
 
 ## Benchmarks

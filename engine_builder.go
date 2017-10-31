@@ -1,8 +1,8 @@
 package eio
 
 import (
+	"errors"
 	"math/rand"
-
 	"sync"
 )
 
@@ -45,6 +45,32 @@ func (p *EngineBuilder) SetCookie(enable bool) *EngineBuilder {
 	return p
 }
 
+// SetCookiePath define the path of cookie.
+func (p *EngineBuilder) SetCookiePath(path string) *EngineBuilder {
+	if len(path) < 1 {
+		panic(errors.New("invalid cookie path: path is blank"))
+	}
+	if path[0] != '/' {
+		panic(errors.New("cookie path must starts with '/'"))
+	}
+	p.options.cookiePath = path
+	return p
+}
+
+// SetCookieHTTPOnly if set true HttpOnly io cookie cannot be accessed by client-side APIs,
+// such as JavaScript. (true) This option has no effect
+// if cookie or cookiePath is set to false.
+func (p *EngineBuilder) SetCookieHTTPOnly(httpOnly bool) *EngineBuilder {
+	p.options.cookieHTTPOnly = httpOnly
+	return p
+}
+
+// SetAllowUpgrades define whether to allow transport upgrades. (default allow upgrades)
+func (p *EngineBuilder) SetAllowUpgrades(enable bool) *EngineBuilder {
+	p.options.allowUpgrades = enable
+	return p
+}
+
 // SetPingInterval define ping time interval in millseconds for client.
 func (p *EngineBuilder) SetPingInterval(interval uint32) *EngineBuilder {
 	p.options.pingInterval = interval
@@ -57,7 +83,7 @@ func (p *EngineBuilder) SetPingTimeout(timeout uint32) *EngineBuilder {
 	return p
 }
 
-// ForceAsyncHandle enable message handlers runing async.
+// ForceAsyncHandle enable message handlers runing async. (default is sync)
 func (p *EngineBuilder) ForceAsyncHandle() *EngineBuilder {
 	p.options.handleAsync = true
 	return p
@@ -94,10 +120,12 @@ func (p *EngineBuilder) Build() Engine {
 // NewEngineBuilder create a builder for Engine.
 func NewEngineBuilder() *EngineBuilder {
 	options := engineOptions{
-		cookie:        false,
-		pingInterval:  defaultPingInterval,
-		pingTimeout:   defaultPingTimeout,
-		allowUpgrades: true,
+		cookie:         false,
+		cookiePath:     "/",
+		cookieHTTPOnly: true,
+		pingInterval:   defaultPingInterval,
+		pingTimeout:    defaultPingTimeout,
+		allowUpgrades:  true,
 	}
 	builder := EngineBuilder{
 		path:    DefaultPath,

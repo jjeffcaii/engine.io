@@ -13,7 +13,8 @@ import (
 )
 
 const (
-	noopDelay = 3 * time.Second
+	noopDelay       = 3 * time.Second
+	outboxThreshold = 32 // The smaller this value, the more GET will be requested.
 )
 
 var (
@@ -60,10 +61,12 @@ func (p *xhrTransport) ready(writer http.ResponseWriter, request *http.Request) 
 		PingInterval: p.eng.options.pingInterval,
 		PingTimeout:  p.eng.options.pingTimeout,
 	}
-	for _, it := range p.eng.allowTransports {
-		if it == WEBSOCKET {
-			okMsg.Upgrades = append(okMsg.Upgrades, "websocket")
-			break
+	if p.eng.options.allowUpgrades {
+		for _, it := range p.eng.allowTransports {
+			if it == WEBSOCKET {
+				okMsg.Upgrades = append(okMsg.Upgrades, "websocket")
+				break
+			}
 		}
 	}
 	return p.write(parser.NewPacketByJSON(parser.OPEN, &okMsg))
@@ -71,9 +74,14 @@ func (p *xhrTransport) ready(writer http.ResponseWriter, request *http.Request) 
 
 func (p *xhrTransport) doReq(writer http.ResponseWriter, request *http.Request) {
 	if p.eng.options.cookie {
-		writer.Header().Set("Set-Cookie", fmt.Sprintf("io=%s; Path=/; HttpOnly", p.socket.id))
+		var cookie string
+		if p.eng.options.cookieHTTPOnly {
+			cookie = fmt.Sprintf("io=%s; Path=%s; HttpOnly", p.socket.id, p.eng.options.cookiePath)
+		} else {
+			cookie = fmt.Sprintf("io=%s; Path=%s;", p.socket.id, p.eng.options.cookiePath)
+		}
+		writer.Header().Set("Set-Cookie", cookie)
 	}
-	//ua := request.Header.Get("User-Agent")
 	origin := request.Header.Get("Origin")
 	if len(origin) > 0 {
 		writer.Header().Set("Access-Control-Allow-Credentials", "true")
@@ -162,12 +170,14 @@ func (p *xhrTransport) doReqPost(writer http.ResponseWriter, request *http.Reque
 		return
 	}
 	// notify socket
-	for _, pack := range packets {
-		err = p.socket.accept(pack)
-		if err != nil {
-			return
+	go func() {
+		for _, pack := range packets {
+			err = p.socket.accept(pack)
+			if err != nil {
+				return
+			}
 		}
-	}
+	}()
 }
 
 func (p *xhrTransport) upgradeStart(dest Transport) error {
@@ -176,7 +186,6 @@ func (p *xhrTransport) upgradeStart(dest Transport) error {
 }
 
 func (p *xhrTransport) upgradeEnd(dest Transport) error {
-	// process unsent messages.
 	end := false
 	for {
 		select {
@@ -295,7 +304,7 @@ func newXhrTransport(server *engineImpl) Transport {
 			eng:    server,
 			locker: new(sync.RWMutex),
 		},
-		outbox: make(chan *parser.Packet, 1024),
+		outbox: make(chan *parser.Packet, outboxThreshold),
 	}
 	return &trans
 }
