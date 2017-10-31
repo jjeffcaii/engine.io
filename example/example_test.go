@@ -7,7 +7,6 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"testing"
-	"time"
 
 	"github.com/jjeffcaii/engine.io"
 )
@@ -21,65 +20,64 @@ func init() {
 		writer.WriteHeader(http.StatusOK)
 		writer.Write([]byte(fmt.Sprintf("totals: %d", server.CountClients())))
 	})
-}
-
-func TestNothing(t *testing.T) {
-	server.OnConnect(func(socket eio.Socket) {
-		log.Println("========> socket connect:", socket.ID())
-		socket.OnMessage(func(data []byte) {
-			// do nothing.
-			log.Println("===> got message:", string(data))
-		})
-		socket.OnClose(func(reason string) {
-			log.Println("========> socket closed:", socket.ID())
-		})
+	var indexHtml = `
+<html>
+    <head>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/engine.io-client/3.1.3/engine.io.min.js"></script>
+        <script>
+         function testConn(url,transports,jsonp){
+             // eio = Socket
+             let u = url || "ws://127.0.0.1:3000";
+             let t = transports || ["polling","websocket"];
+             let options = {
+                 transports: t
+             };
+             if(jsonp){
+                 options.forceJSONP = true;
+             }
+             let socket = eio(u,options);
+             socket.on('open', () => {
+                 let totals = 10000
+                 let count = 0
+                 socket.on('message', (data) => {
+                     console.log("MSG#%d => %s", ++count, data.toString());
+                     if(count == totals){
+                         alert(totals + " message success!");
+	                     socket.close();
+                     }
+                 });
+                 socket.on('close', ()=>{
+                     alert('socket close');
+	             });
+	             for(let i=0;i<totals;i++){
+                     socket.send('你好，'+i+'世界!');
+                 }
+             });
+         }
+        </script>
+    </head>
+    <body>
+        <a href="javascript:testConn(null,['polling'])" role="button">polling</a>
+        <br>
+        <a href="javascript:testConn(null,['polling'],true)" role="button">jsonp</a>
+        <br>
+        <a href="javascript:testConn(null,['websocket'])" role="button">websocket</a>
+        <br>
+        <a href="javascript:testConn(null,['polling','websocket'])" role="button">auto</a>
+        <br>
+    </body>
+</html>
+	`
+	http.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/html; charset=UTF-8")
+		writer.Write([]byte(indexHtml))
 	})
-	http.HandleFunc(eio.DefaultPath, server.Router())
-	log.Fatalln(http.ListenAndServe(":3000", nil))
 }
 
-func TestEcho(t *testing.T) {
+func TestEchoServer(t *testing.T) {
 	server.OnConnect(func(socket eio.Socket) {
 		socket.OnMessage(func(data []byte) {
-			socket.Send(fmt.Sprintf("ECHO: %s", data))
-		})
-		socket.OnUpgrade(func() {
-			log.Println("socket", socket.ID(), "upgrade success")
-		})
-	})
-	log.Fatalln(server.Listen(":3000"))
-}
-
-func TestEchoAndBrd(t *testing.T) {
-	tick := time.NewTicker(5 * time.Second)
-	kill := make(chan uint8)
-	go func() {
-		for {
-			select {
-			case <-tick.C:
-				for _, it := range server.GetClients() {
-					it.Send(fmt.Sprintf("AUTO_BRD: %s", time.Now().Format(time.RFC3339)))
-				}
-				break
-			case <-kill:
-				tick.Stop()
-				return
-			}
-		}
-	}()
-
-	defer func() {
-		close(kill)
-		server.Close()
-	}()
-	server.OnConnect(func(socket eio.Socket) {
-		//log.Println("========> socket connect:", socket.ID())
-		socket.OnMessage(func(data []byte) {
-			socket.Send(fmt.Sprintf("ECHO1: %s", data))
-			socket.Send(fmt.Sprintf("ECHO2: %s", data))
-		})
-		socket.OnClose(func(reason string) {
-			//log.Println("========> socket closed:", socket.ID())
+			socket.Send(fmt.Sprintf("[ECHO] %s", data))
 		})
 	})
 	log.Fatalln(server.Listen(":3000"))
