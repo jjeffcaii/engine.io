@@ -60,10 +60,12 @@ func (p *xhrTransport) ready(writer http.ResponseWriter, request *http.Request) 
 		PingInterval: p.eng.options.pingInterval,
 		PingTimeout:  p.eng.options.pingTimeout,
 	}
-	for _, it := range p.eng.allowTransports {
-		if it == WEBSOCKET {
-			okMsg.Upgrades = append(okMsg.Upgrades, "websocket")
-			break
+	if p.eng.options.allowUpgrades {
+		for _, it := range p.eng.allowTransports {
+			if it == WEBSOCKET {
+				okMsg.Upgrades = append(okMsg.Upgrades, "websocket")
+				break
+			}
 		}
 	}
 	return p.write(parser.NewPacketByJSON(parser.OPEN, &okMsg))
@@ -71,9 +73,14 @@ func (p *xhrTransport) ready(writer http.ResponseWriter, request *http.Request) 
 
 func (p *xhrTransport) doReq(writer http.ResponseWriter, request *http.Request) {
 	if p.eng.options.cookie {
-		writer.Header().Set("Set-Cookie", fmt.Sprintf("io=%s; Path=/; HttpOnly", p.socket.id))
+		var cookie string
+		if p.eng.options.cookieHttpOnly {
+			cookie = fmt.Sprintf("io=%s; Path=%s; HttpOnly", p.socket.id, p.eng.options.cookiePath)
+		} else {
+			cookie = fmt.Sprintf("io=%s; Path=%s;", p.socket.id, p.eng.options.cookiePath)
+		}
+		writer.Header().Set("Set-Cookie", cookie)
 	}
-	//ua := request.Header.Get("User-Agent")
 	origin := request.Header.Get("Origin")
 	if len(origin) > 0 {
 		writer.Header().Set("Access-Control-Allow-Credentials", "true")

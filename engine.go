@@ -19,11 +19,13 @@ var (
 )
 
 type engineOptions struct {
-	allowUpgrades bool
-	cookie        bool
-	pingInterval  uint32
-	pingTimeout   uint32
-	handleAsync   bool
+	allowUpgrades  bool
+	cookie         bool
+	cookiePath     string
+	cookieHttpOnly bool
+	pingInterval   uint32
+	pingTimeout    uint32
+	handleAsync    bool
 }
 
 type engineImpl struct {

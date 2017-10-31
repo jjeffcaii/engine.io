@@ -2,7 +2,6 @@ package eio
 
 import (
 	"fmt"
-
 	"sync"
 
 	"github.com/golang/glog"
