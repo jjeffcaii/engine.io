@@ -57,6 +57,12 @@ func (p *EngineBuilder) SetPingTimeout(timeout uint32) *EngineBuilder {
 	return p
 }
 
+// ForceAsyncHandle enable message handlers runing async.
+func (p *EngineBuilder) ForceAsyncHandle() *EngineBuilder {
+	p.options.handleAsync = true
+	return p
+}
+
 // Build returns a new Engine.
 func (p *EngineBuilder) Build() Engine {
 	clone := func(origin engineOptions) engineOptions {

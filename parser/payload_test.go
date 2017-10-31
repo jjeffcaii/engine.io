@@ -69,7 +69,10 @@ func TestDecodePayloadBase64(t *testing.T) {
 func TestEncodeJSONP(t *testing.T) {
 	m := make(map[string]interface{})
 	m["id"] = 1
-	m["content"] = "this is a test content.\nfuck fuck fuck!"
+	m["content"] = "this is a test content.\nfuck fuck fuck!\u2028\u2029\u2318"
+
+	log.Println(m["content"])
+
 	packet := NewPacketByJSON(MESSAGE, m)
 	bf := new(bytes.Buffer)
 	if err := WritePayloadTo(bf, true, packet, packet); err != nil {

@@ -51,9 +51,30 @@ func (p *socketImpl) OnMessage(handler func([]byte)) Socket {
 	if handler == nil {
 		return p
 	}
-
-	p.msgHanders = append(p.msgHanders, func(data []byte) {
-		go func() {
+	if p.engine.options.handleAsync {
+		p.msgHanders = append(p.msgHanders, func(data []byte) {
+			go func() {
+				defer func() {
+					e := recover()
+					if e == nil {
+						return
+					}
+					err, ok := e.(error)
+					if !ok {
+						return
+					}
+					if p.errorHandlers != nil {
+						for _, fn := range p.errorHandlers {
+							fn(err)
+						}
+					}
+					glog.Errorln("handle socket message event failed:", e)
+				}()
+				handler(data)
+			}()
+		})
+	} else {
+		p.msgHanders = append(p.msgHanders, func(data []byte) {
 			defer func() {
 				e := recover()
 				if e == nil {
@@ -71,8 +92,9 @@ func (p *socketImpl) OnMessage(handler func([]byte)) Socket {
 				glog.Errorln("handle socket message event failed:", e)
 			}()
 			handler(data)
-		}()
-	})
+		})
+	}
+
 	return p
 }
 
@@ -95,16 +117,28 @@ func (p *socketImpl) OnUpgrade(handler func()) Socket {
 	if handler == nil {
 		return p
 	}
-	p.upgradeHandlers = append(p.upgradeHandlers, func() {
-		go func() {
+
+	if p.engine.options.handleAsync {
+		p.upgradeHandlers = append(p.upgradeHandlers, func() {
+			go func() {
+				defer func() {
+					if e := recover(); e != nil {
+						glog.Errorln("handle socket upgrade event failed:", e)
+					}
+				}()
+				handler()
+			}()
+		})
+	} else {
+		p.upgradeHandlers = append(p.upgradeHandlers, func() {
 			defer func() {
 				if e := recover(); e != nil {
 					glog.Errorln("handle socket upgrade event failed:", e)
 				}
 			}()
 			handler()
-		}()
-	})
+		})
+	}
 	return p
 }
 

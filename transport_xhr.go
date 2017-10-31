@@ -73,7 +73,12 @@ func (p *xhrTransport) doReq(writer http.ResponseWriter, request *http.Request) 
 	if p.eng.options.cookie {
 		writer.Header().Set("Set-Cookie", fmt.Sprintf("io=%s; Path=/; HttpOnly", p.socket.id))
 	}
-	if _, ok := request.Header["User-Agent"]; ok {
+	//ua := request.Header.Get("User-Agent")
+	origin := request.Header.Get("Origin")
+	if len(origin) > 0 {
+		writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		writer.Header().Set("Access-Control-Allow-Origin", origin)
+	} else {
 		writer.Header().Set("Access-Control-Allow-Origin", "*")
 	}
 	switch request.Method {

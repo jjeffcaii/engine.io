@@ -23,6 +23,7 @@ type engineOptions struct {
 	cookie        bool
 	pingInterval  uint32
 	pingTimeout   uint32
+	handleAsync   bool
 }
 
 type engineImpl struct {
@@ -41,6 +42,7 @@ func (p *engineImpl) Router() func(http.ResponseWriter, *http.Request) {
 	p.ensureCleaner()
 	return func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method == http.MethodOptions {
+			writer.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 			writer.WriteHeader(http.StatusOK)
 			return
 		}

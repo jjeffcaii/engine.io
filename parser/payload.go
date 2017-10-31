@@ -12,7 +12,7 @@ import (
 
 var (
 	errEmptyPackets = errors.New("input packets is empty")
-	jsonpReplacer   = strings.NewReplacer("\\", "\\\\", "\"", "\\\"")
+	jsonpReplacer   = strings.NewReplacer("\\", "\\\\", "\"", "\\\"", "\u2028", "\\u2028", "\u2029", "\\u2029")
 )
 
 // EncodePayload encode multi packets to payload bytes.
