@@ -57,11 +57,11 @@ func (p *EngineBuilder) SetCookiePath(path string) *EngineBuilder {
 	return p
 }
 
-// SetCookieHttpOnly if set true HttpOnly io cookie cannot be accessed by client-side APIs,
+// SetCookieHTTPOnly if set true HttpOnly io cookie cannot be accessed by client-side APIs,
 // such as JavaScript. (true) This option has no effect
 // if cookie or cookiePath is set to false.
-func (p *EngineBuilder) SetCookieHttpOnly(httpOnly bool) *EngineBuilder {
-	p.options.cookieHttpOnly = httpOnly
+func (p *EngineBuilder) SetCookieHTTPOnly(httpOnly bool) *EngineBuilder {
+	p.options.cookieHTTPOnly = httpOnly
 	return p
 }
 
@@ -122,7 +122,7 @@ func NewEngineBuilder() *EngineBuilder {
 	options := engineOptions{
 		cookie:         false,
 		cookiePath:     "/",
-		cookieHttpOnly: true,
+		cookieHTTPOnly: true,
 		pingInterval:   defaultPingInterval,
 		pingTimeout:    defaultPingTimeout,
 		allowUpgrades:  true,

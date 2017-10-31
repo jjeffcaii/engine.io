@@ -75,7 +75,7 @@ func (p *xhrTransport) ready(writer http.ResponseWriter, request *http.Request) 
 func (p *xhrTransport) doReq(writer http.ResponseWriter, request *http.Request) {
 	if p.eng.options.cookie {
 		var cookie string
-		if p.eng.options.cookieHttpOnly {
+		if p.eng.options.cookieHTTPOnly {
 			cookie = fmt.Sprintf("io=%s; Path=%s; HttpOnly", p.socket.id, p.eng.options.cookiePath)
 		} else {
 			cookie = fmt.Sprintf("io=%s; Path=%s;", p.socket.id, p.eng.options.cookiePath)

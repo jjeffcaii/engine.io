@@ -22,7 +22,7 @@ type engineOptions struct {
 	allowUpgrades  bool
 	cookie         bool
 	cookiePath     string
-	cookieHttpOnly bool
+	cookieHTTPOnly bool
 	pingInterval   uint32
 	pingTimeout    uint32
 	handleAsync    bool
