@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	noopDelay       = 3 * time.Second
-	outboxThreshold = 32 // The smaller this value, the more GET will be requested.
+	noopDelay       = 1 * time.Second
+	outboxThreshold = 64 // The smaller this value, the more GET will be requested.
 )
 
 var (
@@ -237,6 +237,9 @@ func (p *xhrTransport) flush() error {
 				return errPollingEOF
 			}
 			queue = append(queue, pk)
+			if pk.Type == parser.OPEN {
+				end = true
+			}
 			break
 		default:
 			end = true
