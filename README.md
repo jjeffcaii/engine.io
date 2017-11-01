@@ -1,4 +1,4 @@
-# Engine.IO (WARNING: STILL WORKING!!!!)
+# Engine.IO
 
 [![Build Status](https://travis-ci.org/jjeffcaii/engine.io.svg?branch=master)](https://travis-ci.org/jjeffcaii/engine.io)
 
