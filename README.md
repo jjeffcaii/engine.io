@@ -45,6 +45,10 @@ func main() {
 
 > NOTICE: all compatibility tests are under engine.io-client^3.1.2
 
+## Documents
+
+Please see [https://godoc.org/github.com/jjeffcaii/engine.io](https://godoc.org/github.com/jjeffcaii/engine.io).
+
 ## Benchmarks
 
 TODO
