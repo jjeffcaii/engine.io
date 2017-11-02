@@ -56,7 +56,7 @@ func (p *xhrTransport) tryJSONP() (*string, bool) {
 	return &j, true
 }
 
-func (p *xhrTransport) ready(writer http.ResponseWriter, request *http.Request) error {
+func (p *xhrTransport) init(writer http.ResponseWriter, request *http.Request) error {
 	if request.Method != http.MethodGet {
 		return errHTTPMethod
 	}
@@ -77,7 +77,7 @@ func (p *xhrTransport) ready(writer http.ResponseWriter, request *http.Request) 
 	return p.write(parser.NewPacketByJSON(parser.OPEN, &okMsg))
 }
 
-func (p *xhrTransport) doReq(writer http.ResponseWriter, request *http.Request) {
+func (p *xhrTransport) receive(writer http.ResponseWriter, request *http.Request) {
 	if p.eng.options.cookie {
 		var cookie string
 		if p.eng.options.cookieHTTPOnly {
@@ -98,15 +98,15 @@ func (p *xhrTransport) doReq(writer http.ResponseWriter, request *http.Request) 
 	default:
 		break
 	case http.MethodGet:
-		p.doReqGet(writer, request)
+		p.receiveGetReq(writer, request)
 		break
 	case http.MethodPost:
-		p.doReqPost(writer, request)
+		p.receivePostReq(writer, request)
 		break
 	}
 }
 
-func (p *xhrTransport) doReqGet(writer http.ResponseWriter, request *http.Request) {
+func (p *xhrTransport) receiveGetReq(writer http.ResponseWriter, request *http.Request) {
 	p.req = request
 	p.res = writer
 	defer func() {
@@ -139,7 +139,7 @@ func (p *xhrTransport) doReqGet(writer http.ResponseWriter, request *http.Reques
 		p.socket = nil
 	}
 }
-func (p *xhrTransport) doReqPost(writer http.ResponseWriter, request *http.Request) {
+func (p *xhrTransport) receivePostReq(writer http.ResponseWriter, request *http.Request) {
 	var err error
 	defer func() {
 		request.Body.Close()
@@ -185,18 +185,18 @@ func (p *xhrTransport) doReqPost(writer http.ResponseWriter, request *http.Reque
 	}()
 }
 
-func (p *xhrTransport) upgradeStart(dest Transport) error {
+func (p *xhrTransport) upgradeStart() error {
 	p.write(parser.NewPacketCustom(parser.NOOP, make([]byte, 0), 0))
 	return nil
 }
 
-func (p *xhrTransport) upgradeEnd(dest Transport) error {
+func (p *xhrTransport) upgradeEnd(tActive Transport) error {
 	end := false
 	for {
 		select {
 		case pk := <-p.outbox:
 			if pk != nil {
-				dest.write(pk)
+				tActive.write(pk)
 			}
 			break
 		default:

@@ -60,11 +60,11 @@ func (p *wsTransport) ensureWebsocket(writer http.ResponseWriter, request *http.
 	}
 	p.connect = conn
 	p.req = request
-	p.onWrite(func() { p.flush() }, false)
+	p.onWrite(func() { p.flush() })
 	return nil
 }
 
-func (p *wsTransport) ready(writer http.ResponseWriter, request *http.Request) error {
+func (p *wsTransport) init(writer http.ResponseWriter, request *http.Request) error {
 	if err := p.ensureWebsocket(writer, request); err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func (p *wsTransport) ready(writer http.ResponseWriter, request *http.Request) e
 	return p.write(msgOpen)
 }
 
-func (p *wsTransport) doAccept(msg []byte, opt parser.PacketOption) {
+func (p *wsTransport) accept(msg []byte, opt parser.PacketOption) {
 	pack, err := parser.Decode(msg, opt)
 	if err != nil {
 		glog.Errorln("decode packet failed:", err)
@@ -90,7 +90,7 @@ func (p *wsTransport) doAccept(msg []byte, opt parser.PacketOption) {
 	}
 }
 
-func (p *wsTransport) doReq(writer http.ResponseWriter, request *http.Request) {
+func (p *wsTransport) receive(writer http.ResponseWriter, request *http.Request) {
 	defer func() {
 		p.req = nil
 		p.GetSocket().Close()
@@ -118,19 +118,19 @@ func (p *wsTransport) doReq(writer http.ResponseWriter, request *http.Request) {
 		default:
 			break
 		case websocket.TextMessage:
-			p.doAccept(message, 0)
+			p.accept(message, 0)
 			break
 		case websocket.BinaryMessage:
-			p.doAccept(message, parser.BINARY)
+			p.accept(message, parser.BINARY)
 			break
 		}
 	}
 }
 
-func (p *wsTransport) upgradeStart(dest Transport) error {
+func (p *wsTransport) upgradeStart() error {
 	return errUpgradeWsTransport
 }
-func (p *wsTransport) upgradeEnd(dest Transport) error {
+func (p *wsTransport) upgradeEnd(tActive Transport) error {
 	return errUpgradeWsTransport
 }
 
@@ -166,7 +166,7 @@ func (p *wsTransport) flush() error {
 			return err
 		}
 		if out.Type == parser.PONG && out.Data != nil && len(out.Data) == 5 && string(out.Data[:5]) == "probe" {
-			p.socket.getTransportOld().upgradeStart(p)
+			p.socket.getTransportBackup().upgradeStart()
 		}
 	}
 	if p.handlerFlush != nil {

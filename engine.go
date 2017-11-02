@@ -15,7 +15,7 @@ var (
 	protocolVersion = struct {
 		n uint8
 		s string
-	}{3, "3",}
+	}{3, "3"}
 )
 
 type engineOptions struct {
@@ -25,7 +25,6 @@ type engineOptions struct {
 	cookieHTTPOnly bool
 	pingInterval   uint32
 	pingTimeout    uint32
-	handleAsync    bool
 }
 
 type engineImpl struct {
@@ -61,8 +60,8 @@ func (p *engineImpl) Router() func(http.ResponseWriter, *http.Request) {
 		}
 
 		// check transport
-		var ttype TransportType
-		if ttype, err = p.checkTransport(query.Get("transport")); err != nil {
+		var tTypeActive TransportType
+		if tTypeActive, err = p.checkTransport(query.Get("transport")); err != nil {
 			sendError(writer, errors.New("transprot error"), http.StatusBadRequest, 0)
 			return
 		}
@@ -70,41 +69,41 @@ func (p *engineImpl) Router() func(http.ResponseWriter, *http.Request) {
 		var sid = query.Get("sid")
 		var isNew = len(sid) < 1
 
-		var socket *socketImpl
-		var tp Transport
+		var socketActive *socketImpl
+		var transportActive Transport
 
 		if isNew {
 			sid = p.generateID()
-			tp, socket = newTransport(p, ttype), newSocket(sid, p)
-			socket.setTransport(tp)
-			tp.setSocket(socket)
-			if err = tp.ready(writer, request); err != nil {
+			transportActive, socketActive = newTransport(p, tTypeActive), newSocket(sid, p)
+			socketActive.setTransport(transportActive)
+			transportActive.setSocket(socketActive)
+			if err = transportActive.init(writer, request); err != nil {
 				sendError(writer, err)
 				return
 			}
-			socket.OnClose(func(reason string) {
-				p.sockets.Remove(socket)
+			socketActive.OnClose(func(reason string) {
+				p.sockets.Remove(socketActive)
 			})
-			p.sockets.Put(socket)
-			p.socketCreated(socket)
-		} else if socket0, ok := p.sockets.Get(sid); !ok {
-			sendError(writer, fmt.Errorf("%s:socket#%s doesn't exist", request.Method, sid))
+			p.sockets.Put(socketActive)
+			p.socketCreated(socketActive)
+		} else if socketOld, ok := p.sockets.Get(sid); !ok {
+			sendError(writer, fmt.Errorf("%s:socketActive#%s doesn't exist", request.Method, sid))
 			return
 		} else {
-			socket = socket0
-			tp0 := socket0.getTransport()
-			ttype0 := tp0.GetType()
-			if ttype > ttype0 {
-				tp = newTransport(p, ttype)
-				tp.setSocket(socket)
-				socket.setTransport(tp)
-			} else if ttype < ttype0 {
-				tp = socket0.getTransportOld()
+			socketActive = socketOld
+			transportOld := socketOld.getTransport()
+			tTypeOld := transportOld.GetType()
+			if tTypeActive > tTypeOld {
+				transportActive = newTransport(p, tTypeActive)
+				transportActive.setSocket(socketActive)
+				socketActive.setTransport(transportActive)
+			} else if tTypeActive < tTypeOld {
+				transportActive = socketOld.getTransportBackup()
 			} else {
-				tp = tp0
+				transportActive = transportOld
 			}
 		}
-		tp.doReq(writer, request)
+		transportActive.receive(writer, request)
 	}
 }
 
