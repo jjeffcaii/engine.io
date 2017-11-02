@@ -27,8 +27,13 @@ func init() {
 
 type wsTransport struct {
 	tinyTransport
+	req     *http.Request
 	connect *websocket.Conn
 	outbox  *queue
+}
+
+func (p *wsTransport) GetRequest() *http.Request {
+	return p.req
 }
 
 func (p *wsTransport) GetType() TransportType {
@@ -54,6 +59,7 @@ func (p *wsTransport) ensureWebsocket(writer http.ResponseWriter, request *http.
 		return err
 	}
 	p.connect = conn
+	p.req = request
 	p.onWrite(func() { p.flush() })
 	return nil
 }
@@ -86,6 +92,7 @@ func (p *wsTransport) accept(msg []byte, opt parser.PacketOption) {
 
 func (p *wsTransport) receive(writer http.ResponseWriter, request *http.Request) {
 	defer func() {
+		p.req = nil
 		p.GetSocket().Close()
 		e := recover()
 		if e == nil {
