@@ -22,6 +22,13 @@ type socketImpl struct {
 	transportBackup, transportPrimary Transport
 }
 
+func (p *socketImpl) Transport() Transport {
+	if p.transportPrimary != nil {
+		return p.transportPrimary
+	}
+	return p.transportBackup
+}
+
 func (p *socketImpl) ID() string {
 	return p.id
 }

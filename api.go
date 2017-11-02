@@ -45,6 +45,8 @@ type Transport interface {
 	GetEngine() Engine
 	// GetSocket returns current socket.
 	GetSocket() Socket
+	// GetRequest returns native http request.
+	GetRequest() *http.Request
 
 	// inner functions.
 	setSocket(socket Socket)
@@ -65,6 +67,8 @@ type Socket interface {
 	ID() string
 	// Server returns engine of current socket.
 	Server() Engine
+	// Transport returns the active transport of socket.
+	Transport() Transport
 	// OnClose bind handler when socket closed.
 	OnClose(func(reason string)) Socket
 	// OnMessage bind handler when message income.

@@ -31,6 +31,11 @@ type xhrTransport struct {
 	res    http.ResponseWriter
 }
 
+func (p *xhrTransport) GetRequest() *http.Request {
+
+	return p.req
+}
+
 func (p *xhrTransport) GetType() TransportType {
 	return POLLING
 }
