@@ -47,4 +47,31 @@ func main() {
 
 ## Benchmarks
 
+## transport upgrade sequence
+copy below text to the [textart](http://textart.io/sequence)  
+```
+object ClientXHR ClientWS ServerXHR ServerWS
+ClientXHR->ServerXHR: GET with polling transport
+ServerXHR->ClientXHR: return OK with sid and upgrades["websocket"]
+ClientXHR->ServerXHR:GET with websocket transport
+ClientXHR->ServerXHR: conntinue polling message with POST method
+ClientXHR->ServerXHR: GET method waiting result of last polling.
+ServerXHR->ClientXHR: return OK to the client as response of POST method
+ServerXHR->ServerWS: websocket upgrade, we have a new transport.
+ServerXHR->ClientXHR: HttpCode 101 switching protocols
+
+ClientXHR->ClientWS: change transport to websocket
+ClientWS->ServerXHR: 2probe (ping with probe)
+ServerXHR->ClientWS: 3probe (pong with probe) 
+ServerXHR->ServerXHR: upgradeStart() 
+ServerXHR->ClientXHR: send a noop packet to stop polling transport of client.
+ClientWS->ServerXHR: send packet "5" tell server that i have upgraded
+ServerWS->ServerXHR: upgradeEnd() now we can close ServerXHR
+ServerXHR->ServerXHR: close XHR transport
+ServerWS->ClientWS: send rest packet before upgrade.
+
+ClientWS->ServerWS: some message
+ServerWS->ClientWS: response some message
+```
 TODO
+

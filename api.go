@@ -48,11 +48,12 @@ type Transport interface {
 
 	// inner functions.
 	setSocket(socket Socket)
-	ready(writer http.ResponseWriter, request *http.Request) error
-	doReq(writer http.ResponseWriter, request *http.Request)
+	init(writer http.ResponseWriter, request *http.Request) error
+	receive(writer http.ResponseWriter, request *http.Request)
 
-	upgradeStart(dest Transport) error
-	upgradeEnd(dest Transport) error
+	upgradeStart() error
+	//the active transport will be used to send rest packet.
+	upgradeEnd(tActive Transport) error
 
 	write(packet *parser.Packet) error
 	flush() error

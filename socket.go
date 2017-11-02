@@ -14,7 +14,7 @@ type socketImpl struct {
 	heartbeat uint32
 	engine    *engineImpl
 
-	msgHanders      []func([]byte)
+	msgHandlers     []func([]byte)
 	upgradeHandlers []func()
 	errorHandlers   []func(err error)
 	closeHandlers   []func(reason string)
@@ -51,50 +51,25 @@ func (p *socketImpl) OnMessage(handler func([]byte)) Socket {
 	if handler == nil {
 		return p
 	}
-	if p.engine.options.handleAsync {
-		p.msgHanders = append(p.msgHanders, func(data []byte) {
-			go func() {
-				defer func() {
-					e := recover()
-					if e == nil {
-						return
-					}
-					err, ok := e.(error)
-					if !ok {
-						return
-					}
-					if p.errorHandlers != nil {
-						for _, fn := range p.errorHandlers {
-							fn(err)
-						}
-					}
-					glog.Errorln("handle socket message event failed:", e)
-				}()
-				handler(data)
-			}()
-		})
-	} else {
-		p.msgHanders = append(p.msgHanders, func(data []byte) {
-			defer func() {
-				e := recover()
-				if e == nil {
-					return
+	p.msgHandlers = append(p.msgHandlers, func(data []byte) {
+		defer func() {
+			e := recover()
+			if e == nil {
+				return
+			}
+			err, ok := e.(error)
+			if !ok {
+				return
+			}
+			if p.errorHandlers != nil {
+				for _, fn := range p.errorHandlers {
+					fn(err)
 				}
-				err, ok := e.(error)
-				if !ok {
-					return
-				}
-				if p.errorHandlers != nil {
-					for _, fn := range p.errorHandlers {
-						fn(err)
-					}
-				}
-				glog.Errorln("handle socket message event failed:", e)
-			}()
-			handler(data)
-		})
-	}
-
+			}
+			glog.Errorln("handle socket message event failed:", e)
+		}()
+		handler(data)
+	})
 	return p
 }
 
@@ -117,33 +92,19 @@ func (p *socketImpl) OnUpgrade(handler func()) Socket {
 	if handler == nil {
 		return p
 	}
-
-	if p.engine.options.handleAsync {
-		p.upgradeHandlers = append(p.upgradeHandlers, func() {
-			go func() {
-				defer func() {
-					if e := recover(); e != nil {
-						glog.Errorln("handle socket upgrade event failed:", e)
-					}
-				}()
-				handler()
-			}()
-		})
-	} else {
-		p.upgradeHandlers = append(p.upgradeHandlers, func() {
-			defer func() {
-				if e := recover(); e != nil {
-					glog.Errorln("handle socket upgrade event failed:", e)
-				}
-			}()
-			handler()
-		})
-	}
+	p.upgradeHandlers = append(p.upgradeHandlers, func() {
+		defer func() {
+			if e := recover(); e != nil {
+				glog.Errorln("handle socket upgrade event failed:", e)
+			}
+		}()
+		handler()
+	})
 	return p
 }
 
 func (p *socketImpl) Send(message interface{}) error {
-	if atomic.LoadUint32(&(p.heartbeat)) == 0 {
+	if !p.isHeartbeat() {
 		return fmt.Errorf("socket#%s is closed", p.id)
 	}
 	packet := parser.NewPacket(parser.MESSAGE, message)
@@ -154,9 +115,10 @@ func (p *socketImpl) Send(message interface{}) error {
 }
 
 func (p *socketImpl) Close() {
-	if atomic.LoadUint32(&(p.heartbeat)) == 0 {
+	if !p.isHeartbeat() {
 		return
 	}
+	//stop heartbeat
 	atomic.StoreUint32(&(p.heartbeat), 0)
 	var reason string
 	if p.transportPrimary != nil {
@@ -199,7 +161,7 @@ func (p *socketImpl) getTransport() Transport {
 	}
 }
 
-func (p *socketImpl) getTransportOld() Transport {
+func (p *socketImpl) getTransportBackup() Transport {
 	if p.transportPrimary == nil || p.transportBackup == nil {
 		panic("old transport unavailable")
 	}
@@ -215,10 +177,10 @@ func (p *socketImpl) accept(packet *parser.Packet) error {
 		break
 	case parser.UPGRADE:
 		if p.transportPrimary != nil && p.transportBackup != nil {
-			old := p.transportBackup
-			old.upgradeEnd(p.transportPrimary)
+			tBackup := p.transportBackup
+			tBackup.upgradeEnd(p.transportPrimary)
 			p.transportBackup = nil
-			if err := old.close(); err != nil {
+			if err := tBackup.close(); err != nil {
 				return err
 			}
 		}
@@ -227,9 +189,10 @@ func (p *socketImpl) accept(packet *parser.Packet) error {
 		}
 		break
 	case parser.PING:
+		//response PING in async as this action is not relate business.
 		go func() {
 			// refresh heartbeat then pong it.
-			if atomic.LoadUint32(&(p.heartbeat)) != 0 {
+			if p.isHeartbeat() {
 				atomic.StoreUint32(&(p.heartbeat), now32())
 			}
 			pong := parser.NewPacketCustom(parser.PONG, packet.Data, 0)
@@ -237,12 +200,16 @@ func (p *socketImpl) accept(packet *parser.Packet) error {
 		}()
 		break
 	case parser.MESSAGE:
-		for _, fn := range p.msgHanders {
+		for _, fn := range p.msgHandlers {
 			fn(packet.Data)
 		}
 		break
 	}
 	return nil
+}
+
+func (p *socketImpl) isHeartbeat() bool {
+	return atomic.LoadUint32(&(p.heartbeat)) == 0
 }
 
 func (p *socketImpl) isLost() bool {
@@ -256,7 +223,7 @@ func newSocket(id string, eng *engineImpl) *socketImpl {
 		engine:          eng,
 		heartbeat:       now32(),
 		upgradeHandlers: make([]func(), 0),
-		msgHanders:      make([]func([]byte), 0),
+		msgHandlers:     make([]func([]byte), 0),
 		errorHandlers:   make([]func(error), 0),
 	}
 	return socket

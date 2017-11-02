@@ -22,60 +22,33 @@ type tinyTransport struct {
 	handlerFlush func()
 }
 
-func (p *tinyTransport) onWrite(fn func(), async bool) {
+func (p *tinyTransport) onWrite(fn func()) {
 	if fn == nil {
 		return
 	}
 
-	if async {
-		p.handlerWrite = func() {
-			go func() {
-				defer func() {
-					if e := recover(); e != nil {
-						glog.Errorln("handle write failed:", e)
-					}
-				}()
-				fn()
-			}()
-		}
-	} else {
-		p.handlerWrite = func() {
-			defer func() {
-				if e := recover(); e != nil {
-					glog.Errorln("handle write failed:", e)
-				}
-			}()
-			fn()
-		}
+	p.handlerWrite = func() {
+		defer func() {
+			if e := recover(); e != nil {
+				glog.Errorln("handle write failed:", e)
+			}
+		}()
+		fn()
 	}
 }
 
-func (p *tinyTransport) onFlush(fn func(), async bool) {
+func (p *tinyTransport) onFlush(fn func()) {
 	if fn == nil {
 		return
 	}
-	if async {
-		p.handlerFlush = func() {
-			go func() {
-				defer func() {
-					if e := recover(); e != nil {
-						glog.Errorln("handle flush failed:", e)
-					}
-				}()
-				fn()
-			}()
-		}
-	} else {
-		p.handlerFlush = func() {
-			defer func() {
-				if e := recover(); e != nil {
-					glog.Errorln("handle flush failed:", e)
-				}
-			}()
-			fn()
-		}
+	p.handlerFlush = func() {
+		defer func() {
+			if e := recover(); e != nil {
+				glog.Errorln("handle flush failed:", e)
+			}
+		}()
+		fn()
 	}
-
 }
 
 func (p *tinyTransport) setSocket(socket Socket) {
