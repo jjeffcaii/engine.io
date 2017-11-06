@@ -3,6 +3,7 @@ package eio
 import (
 	"errors"
 	"math/rand"
+	"net/http"
 	"sync"
 )
 
@@ -16,6 +17,7 @@ var defaultTransports = []TransportType{POLLING, WEBSOCKET}
 // EngineBuilder is a builder for Engine.
 type EngineBuilder struct {
 	allowTransports []TransportType
+	allowRequest    func(*http.Request) error
 	options         *engineOptions
 	path            string
 	gen             func(uint32) string
@@ -36,6 +38,12 @@ func (p *EngineBuilder) SetGenerateID(gen func(uint32) string) *EngineBuilder {
 // SetPath define the http router path for Engine.
 func (p *EngineBuilder) SetPath(path string) *EngineBuilder {
 	p.path = path
+	return p
+}
+
+// SetAllowRequest set a function that receives a given request, and can decide whether to continue or not.
+func (p *EngineBuilder) SetAllowRequest(validator func(*http.Request) error) *EngineBuilder {
+	p.allowRequest = validator
 	return p
 }
 
@@ -92,14 +100,15 @@ func (p *EngineBuilder) Build() Engine {
 		store: new(sync.Map),
 	}
 	eng := &engineImpl{
-		sequence:   rand.Uint32(),
-		onSockets:  make([]func(Socket), 0),
-		options:    &clone,
-		sockets:    &sockets,
-		path:       p.path,
-		sidGen:     p.gen,
-		junkKiller: make(chan struct{}),
-		junkTicker: nil,
+		sequence:     rand.Uint32(),
+		onSockets:    make([]func(Socket), 0),
+		options:      &clone,
+		sockets:      &sockets,
+		path:         p.path,
+		sidGen:       p.gen,
+		junkKiller:   make(chan struct{}),
+		junkTicker:   nil,
+		allowRequest: p.allowRequest,
 	}
 	if len(p.allowTransports) < 1 {
 		eng.allowTransports = defaultTransports

@@ -29,6 +29,7 @@ type engineOptions struct {
 
 type engineImpl struct {
 	allowTransports []TransportType
+	allowRequest    func(*http.Request) error
 	sidGen          func(seq uint32) string
 	sequence        uint32
 	path            string
@@ -64,6 +65,14 @@ func (p *engineImpl) Router() func(http.ResponseWriter, *http.Request) {
 		if tTypeActive, err = p.checkTransport(query.Get("transport")); err != nil {
 			sendError(writer, errors.New("transprot error"), http.StatusBadRequest, 0)
 			return
+		}
+
+		// check allow request
+		if p.allowRequest != nil {
+			if err := p.allowRequest(request); err != nil {
+				sendError(writer, err, http.StatusNotAcceptable, 0)
+				return
+			}
 		}
 
 		var sid = query.Get("sid")
