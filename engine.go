@@ -189,7 +189,11 @@ func (p *engineImpl) ensureCleaner() {
 	p.junkTicker = time.NewTicker(time.Millisecond * time.Duration(p.options.pingTimeout))
 	// cron: check and kill lost socket.
 	go func() {
+		var end bool
 		for {
+			if end {
+				break
+			}
 			select {
 			case <-p.junkTicker.C:
 				losts := p.sockets.List(func(val *socketImpl) bool {
@@ -206,6 +210,7 @@ func (p *engineImpl) ensureCleaner() {
 				break
 			case <-p.junkKiller:
 				p.junkTicker.Stop()
+				end = true
 				return
 			}
 		}
