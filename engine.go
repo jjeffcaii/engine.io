@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/golang/glog"
+	"log"
 )
 
 var (
@@ -29,6 +29,9 @@ type engineOptions struct {
 }
 
 type engineImpl struct {
+	logInfo         *log.Logger
+	logWarn         *log.Logger
+	logErr          *log.Logger
 	allowTransports []TransportType
 	sidGen          func(seq uint32) string
 	sequence        uint32
@@ -38,6 +41,7 @@ type engineImpl struct {
 	sockets         *socketMap
 	junkKiller      chan struct{}
 	junkTicker      *time.Ticker
+	allowRequest    func(*http.Request) error
 }
 
 func (p *engineImpl) Router() func(http.ResponseWriter, *http.Request) {
@@ -65,6 +69,14 @@ func (p *engineImpl) Router() func(http.ResponseWriter, *http.Request) {
 		if ttype, err = p.checkTransport(query.Get("transport")); err != nil {
 			sendError(writer, errors.New("transprot error"), http.StatusBadRequest, 0)
 			return
+		}
+
+		// check allow request
+		if p.allowRequest != nil {
+			if err := p.allowRequest(request); err != nil {
+				sendError(writer, err, http.StatusNotAcceptable, 0)
+				return
+			}
 		}
 
 		var sid = query.Get("sid")
@@ -187,7 +199,9 @@ func (p *engineImpl) ensureCleaner() {
 					for _, it := range losts {
 						it.Close()
 					}
-					glog.Infof("***** kill %d DEAD sockets *****\n", len(losts))
+					if p.logInfo != nil {
+						p.logInfo.Printf("***** kill %d DEAD sockets *****\n", len(losts))
+					}
 				}
 				break
 			case <-p.junkKiller:

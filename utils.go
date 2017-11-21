@@ -10,8 +10,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/golang/glog"
 )
 
 var emptyStringArray = make([]string, 0)
@@ -37,7 +35,6 @@ func sendError(writer http.ResponseWriter, e error, codes ...int) {
 	if err := json.NewEncoder(writer).Encode(&foo); err != nil {
 		panic(err)
 	}
-	glog.Warningln("ERR:", e)
 }
 
 func randomSessionID(seed uint32) string {

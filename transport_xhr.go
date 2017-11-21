@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/glog"
 	"github.com/jjeffcaii/engine.io/parser"
 )
 
@@ -116,7 +115,9 @@ func (p *xhrTransport) doReqGet(writer http.ResponseWriter, request *http.Reques
 	j, jsonp := p.tryJSONP()
 	if jsonp {
 		if _, err := p.res.Write([]byte(fmt.Sprintf("___eio[%s](\"", *j))); err != nil {
-			glog.Errorln("write jsonp prefix failed:", err)
+			if p.eng.logErr != nil {
+				p.eng.logErr.Println("write jsonp prefix failed:", err)
+			}
 			return
 		}
 	}
@@ -124,13 +125,17 @@ func (p *xhrTransport) doReqGet(writer http.ResponseWriter, request *http.Reques
 	if err := p.flush(); err == errPollingEOF {
 		kill = true
 		if err := parser.WritePayloadTo(p.res, false, defaultPacketClose); err != nil {
-			glog.Errorln("write close packet failed:", err)
+			if p.eng.logErr != nil {
+				p.eng.logErr.Println("write close packet failed:", err)
+			}
 			return
 		}
 	}
 	if jsonp {
 		if _, err := p.res.Write(jsonpEnd); err != nil {
-			glog.Errorln("write jsonp suffix failed:", err)
+			if p.eng.logErr != nil {
+				p.eng.logErr.Println("write jsonp suffix failed:", err)
+			}
 			return
 		}
 	}
@@ -156,13 +161,17 @@ func (p *xhrTransport) doReqPost(writer http.ResponseWriter, request *http.Reque
 	default:
 		body, err = ioutil.ReadAll(request.Body)
 		if err != nil {
-			glog.Errorln("read request body failed:", err)
+			if p.eng.logErr != nil {
+				p.eng.logErr.Println("read request body failed:", err)
+			}
 			return
 		}
 		break
 	case "application/x-www-form-urlencoded":
 		if err := request.ParseForm(); err != nil {
-			glog.Errorln("parse post form failed:", err)
+			if p.eng.logErr != nil {
+				p.eng.logErr.Println("parse post form failed:", err)
+			}
 			return
 		}
 		body = []byte(request.PostFormValue("d"))
@@ -258,7 +267,9 @@ func (p *xhrTransport) flush() error {
 	if len(queue) < 1 {
 		select {
 		case <-closeNotifier.CloseNotify():
-			glog.Warningln("notify close")
+			if p.eng.logWarn != nil {
+				p.eng.logWarn.Println("client close connect")
+			}
 			return errPollingEOF
 		case pk := <-p.outbox:
 			if pk == nil {

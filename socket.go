@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"github.com/golang/glog"
 	"github.com/jjeffcaii/engine.io/parser"
 )
 
@@ -45,7 +44,9 @@ func (p *socketImpl) OnClose(handler func(string)) Socket {
 		go func() {
 			defer func() {
 				if e := recover(); e != nil {
-					glog.Error("handle socket close event failed:", e)
+					if p.engine.logErr != nil {
+						p.engine.logErr.Println("handle socket close event failed:", e)
+					}
 				}
 			}()
 			handler(reason)
@@ -75,7 +76,9 @@ func (p *socketImpl) OnMessage(handler func([]byte)) Socket {
 							fn(err)
 						}
 					}
-					glog.Errorln("handle socket message event failed:", e)
+					if p.engine.logErr != nil {
+						p.engine.logErr.Println("handle socket message event failed:", e)
+					}
 				}()
 				handler(data)
 			}()
@@ -96,7 +99,9 @@ func (p *socketImpl) OnMessage(handler func([]byte)) Socket {
 						fn(err)
 					}
 				}
-				glog.Errorln("handle socket message event failed:", e)
+				if p.engine.logErr != nil {
+					p.engine.logErr.Println("handle socket message event failed:", e)
+				}
 			}()
 			handler(data)
 		})
@@ -112,7 +117,9 @@ func (p *socketImpl) OnError(handler func(error)) Socket {
 	p.errorHandlers = append(p.errorHandlers, func(err error) {
 		defer func() {
 			if e := recover(); e != nil {
-				glog.Errorln("handle socket error event failed:", e)
+				if p.engine.logErr != nil {
+					p.engine.logErr.Println("handle socket error event failed:", e)
+				}
 			}
 		}()
 		handler(err)
@@ -130,7 +137,9 @@ func (p *socketImpl) OnUpgrade(handler func()) Socket {
 			go func() {
 				defer func() {
 					if e := recover(); e != nil {
-						glog.Errorln("handle socket upgrade event failed:", e)
+						if p.engine.logErr != nil {
+							p.engine.logErr.Println("handle socket upgrade event failed:", e)
+						}
 					}
 				}()
 				handler()
@@ -140,7 +149,9 @@ func (p *socketImpl) OnUpgrade(handler func()) Socket {
 		p.upgradeHandlers = append(p.upgradeHandlers, func() {
 			defer func() {
 				if e := recover(); e != nil {
-					glog.Errorln("handle socket upgrade event failed:", e)
+					if p.engine.logErr != nil {
+						p.engine.logErr.Println("handle socket upgrade event failed:", e)
+					}
 				}
 			}()
 			handler()

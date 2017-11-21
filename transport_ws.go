@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/golang/glog"
 	"github.com/gorilla/websocket"
 	"github.com/jjeffcaii/engine.io/parser"
 )
@@ -55,7 +54,9 @@ func (p *wsTransport) ensureWebsocket(writer http.ResponseWriter, request *http.
 	// upgrade to websocket.
 	conn, err := libWebsocket.Upgrade(writer, request, nil)
 	if err != nil {
-		glog.Errorln("websocket upgrade failed:", err)
+		if p.eng.logErr != nil {
+			p.eng.logErr.Println("websocket upgrade failed:", err)
+		}
 		return err
 	}
 	p.connect = conn
@@ -80,7 +81,9 @@ func (p *wsTransport) ready(writer http.ResponseWriter, request *http.Request) e
 func (p *wsTransport) doAccept(msg []byte, opt parser.PacketOption) {
 	pack, err := parser.Decode(msg, opt)
 	if err != nil {
-		glog.Errorln("decode packet failed:", err)
+		if p.eng.logErr != nil {
+			p.eng.logErr.Println("decode packet failed:", err)
+		}
 		panic(err)
 	}
 
@@ -101,7 +104,9 @@ func (p *wsTransport) doReq(writer http.ResponseWriter, request *http.Request) {
 		if _, ok := e.(*websocket.CloseError); ok {
 			return
 		}
-		glog.Errorln("transport:", e)
+		if p.eng.logErr != nil {
+			p.eng.logErr.Println("do request failed:", e)
+		}
 	}()
 
 	if err := p.ensureWebsocket(writer, request); err != nil {

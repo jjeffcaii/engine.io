@@ -3,8 +3,6 @@ package eio
 import (
 	"fmt"
 	"sync"
-
-	"github.com/golang/glog"
 )
 
 type messageOK struct {
@@ -32,7 +30,9 @@ func (p *tinyTransport) onWrite(fn func(), async bool) {
 			go func() {
 				defer func() {
 					if e := recover(); e != nil {
-						glog.Errorln("handle write failed:", e)
+						if p.eng.logErr != nil {
+							p.eng.logErr.Println("handle write failed:", e)
+						}
 					}
 				}()
 				fn()
@@ -42,7 +42,9 @@ func (p *tinyTransport) onWrite(fn func(), async bool) {
 		p.handlerWrite = func() {
 			defer func() {
 				if e := recover(); e != nil {
-					glog.Errorln("handle write failed:", e)
+					if p.eng.logErr != nil {
+						p.eng.logErr.Println("handle write failed:", e)
+					}
 				}
 			}()
 			fn()
@@ -59,7 +61,9 @@ func (p *tinyTransport) onFlush(fn func(), async bool) {
 			go func() {
 				defer func() {
 					if e := recover(); e != nil {
-						glog.Errorln("handle flush failed:", e)
+						if p.eng.logErr != nil {
+							p.eng.logErr.Println("handle flush failed:", e)
+						}
 					}
 				}()
 				fn()
@@ -69,7 +73,9 @@ func (p *tinyTransport) onFlush(fn func(), async bool) {
 		p.handlerFlush = func() {
 			defer func() {
 				if e := recover(); e != nil {
-					glog.Errorln("handle flush failed:", e)
+					if p.eng.logErr != nil {
+						p.eng.logErr.Println("handle flush failed:", e)
+					}
 				}
 			}()
 			fn()

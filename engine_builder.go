@@ -2,7 +2,9 @@ package eio
 
 import (
 	"errors"
+	"log"
 	"math/rand"
+	"net/http"
 	"sync"
 )
 
@@ -15,10 +17,38 @@ var defaultTransports = []TransportType{POLLING, WEBSOCKET}
 
 // EngineBuilder is a builder for Engine.
 type EngineBuilder struct {
+	l1              *log.Logger
+	l2              *log.Logger
+	l3              *log.Logger
 	allowTransports []TransportType
 	options         *engineOptions
 	path            string
 	gen             func(uint32) string
+	allowRequest    func(*http.Request) error
+}
+
+// SetAllowRequest set a function that receives a given request, and can decide whether to continue or not.
+func (p *EngineBuilder) SetAllowRequest(validator func(*http.Request) error) *EngineBuilder {
+	p.allowRequest = validator
+	return p
+}
+
+// SetLoggerInfo set logger for INFO
+func (p *EngineBuilder) SetLoggerInfo(logger *log.Logger) *EngineBuilder {
+	p.l1 = logger
+	return p
+}
+
+// SetLoggerWarn set logger for WARN
+func (p *EngineBuilder) SetLoggerWarn(logger *log.Logger) *EngineBuilder {
+	p.l2 = logger
+	return p
+}
+
+// SetLoggerError set logger for ERROR
+func (p *EngineBuilder) SetLoggerError(logger *log.Logger) *EngineBuilder {
+	p.l3 = logger
+	return p
 }
 
 // SetTransports define transport types allow.
@@ -98,6 +128,9 @@ func (p *EngineBuilder) Build() Engine {
 		store: new(sync.Map),
 	}
 	eng := &engineImpl{
+		logInfo:    p.l1,
+		logWarn:    p.l2,
+		logErr:     p.l3,
 		sequence:   rand.Uint32(),
 		onSockets:  make([]func(Socket), 0),
 		options:    &clone,
@@ -106,6 +139,7 @@ func (p *EngineBuilder) Build() Engine {
 		sidGen:     p.gen,
 		junkKiller: make(chan struct{}),
 		junkTicker: nil,
+		allowRequest: p.allowRequest,
 	}
 	if len(p.allowTransports) < 1 {
 		eng.allowTransports = defaultTransports
