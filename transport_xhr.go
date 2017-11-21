@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/glog"
 	"github.com/jjeffcaii/engine.io/parser"
 )
 
@@ -116,7 +115,9 @@ func (p *xhrTransport) receiveGetReq(writer http.ResponseWriter, request *http.R
 	j, jsonp := p.tryJSONP()
 	if jsonp {
 		if _, err := p.res.Write([]byte(fmt.Sprintf("___eio[%s](\"", *j))); err != nil {
-			glog.Errorln("write jsonp prefix failed:", err)
+			if p.eng.errLogger != nil {
+				p.eng.errLogger.Println("write jsonp prefix failed:", err)
+			}
 			return
 		}
 	}
@@ -124,13 +125,17 @@ func (p *xhrTransport) receiveGetReq(writer http.ResponseWriter, request *http.R
 	if err := p.flush(); err == errPollingEOF {
 		kill = true
 		if err := parser.WritePayloadTo(p.res, false, defaultPacketClose); err != nil {
-			glog.Errorln("write close packet failed:", err)
+			if p.eng.errLogger != nil {
+				p.eng.errLogger.Println("write close packet failed:", err)
+			}
 			return
 		}
 	}
 	if jsonp {
 		if _, err := p.res.Write(jsonpEnd); err != nil {
-			glog.Errorln("write jsonp suffix failed:", err)
+			if p.eng.errLogger != nil {
+				p.eng.errLogger.Println("write jsonp suffix failed:", err)
+			}
 			return
 		}
 	}
@@ -156,13 +161,17 @@ func (p *xhrTransport) receivePostReq(writer http.ResponseWriter, request *http.
 	default:
 		body, err = ioutil.ReadAll(request.Body)
 		if err != nil {
-			glog.Errorln("read request body failed:", err)
+			if p.eng.errLogger != nil {
+				p.eng.errLogger.Println("read request body failed:", err)
+			}
 			return
 		}
 		break
 	case "application/x-www-form-urlencoded":
 		if err := request.ParseForm(); err != nil {
-			glog.Errorln("parse post form failed:", err)
+			if p.eng.errLogger != nil {
+				p.eng.errLogger.Println("parse post form failed:", err)
+			}
 			return
 		}
 		body = []byte(request.PostFormValue("d"))
@@ -258,7 +267,9 @@ func (p *xhrTransport) flush() error {
 	if len(queue) < 1 {
 		select {
 		case <-closeNotifier.CloseNotify():
-			glog.Warningln("notify close")
+			if p.eng.warnLogger != nil {
+				p.eng.warnLogger.Println("connect closed by client")
+			}
 			return errPollingEOF
 		case pk := <-p.outbox:
 			if pk == nil {
@@ -268,7 +279,6 @@ func (p *xhrTransport) flush() error {
 			break
 		case <-time.After(time.Millisecond * time.Duration(p.eng.options.pingTimeout)):
 			return errPollingEOF
-			//queue = append(queue, parser.NewPacketCustom(parser.CLOSE, make([]byte, 0), 0))
 		}
 	}
 	_, jsonp := p.tryJSONP()

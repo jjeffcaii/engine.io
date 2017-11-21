@@ -2,6 +2,7 @@ package eio
 
 import (
 	"errors"
+	"log"
 	"math/rand"
 	"net/http"
 	"sync"
@@ -21,6 +22,27 @@ type EngineBuilder struct {
 	options         *engineOptions
 	path            string
 	gen             func(uint32) string
+	loggerInfo      *log.Logger
+	loggerWarn      *log.Logger
+	loggerErr       *log.Logger
+}
+
+// SetLoggerInfo set logger for INFO
+func (p *EngineBuilder) SetLoggerInfo(logger *log.Logger) *EngineBuilder {
+	p.loggerInfo = logger
+	return p
+}
+
+// SetLoggerWarn set logger for WARN
+func (p *EngineBuilder) SetLoggerWarn(logger *log.Logger) *EngineBuilder {
+	p.loggerWarn = logger
+	return p
+}
+
+// SetLoggerError set logger for ERROR
+func (p *EngineBuilder) SetLoggerError(logger *log.Logger) *EngineBuilder {
+	p.loggerErr = logger
+	return p
 }
 
 // SetTransports define transport types allow.
@@ -100,6 +122,9 @@ func (p *EngineBuilder) Build() Engine {
 		store: new(sync.Map),
 	}
 	eng := &engineImpl{
+		infoLogger:   p.loggerInfo,
+		warnLogger:   p.loggerWarn,
+		errLogger:    p.loggerErr,
 		sequence:     rand.Uint32(),
 		onSockets:    make([]func(Socket), 0),
 		options:      &clone,

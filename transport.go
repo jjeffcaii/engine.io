@@ -3,8 +3,6 @@ package eio
 import (
 	"fmt"
 	"sync"
-
-	"github.com/golang/glog"
 )
 
 type messageOK struct {
@@ -30,7 +28,9 @@ func (p *tinyTransport) onWrite(fn func()) {
 	p.handlerWrite = func() {
 		defer func() {
 			if e := recover(); e != nil {
-				glog.Errorln("handle write failed:", e)
+				if p.eng.errLogger != nil {
+					p.eng.errLogger.Println("handle write failed:", e)
+				}
 			}
 		}()
 		fn()
@@ -44,7 +44,9 @@ func (p *tinyTransport) onFlush(fn func()) {
 	p.handlerFlush = func() {
 		defer func() {
 			if e := recover(); e != nil {
-				glog.Errorln("handle flush failed:", e)
+				if p.eng.errLogger != nil {
+					p.eng.errLogger.Println("handle flush failed:", e)
+				}
 			}
 		}()
 		fn()

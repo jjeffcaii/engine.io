@@ -3,12 +3,11 @@ package eio
 import (
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/golang/glog"
 )
 
 var (
@@ -28,6 +27,10 @@ type engineOptions struct {
 }
 
 type engineImpl struct {
+	infoLogger *log.Logger
+	warnLogger *log.Logger
+	errLogger  *log.Logger
+
 	allowTransports []TransportType
 	allowRequest    func(*http.Request) error
 	sidGen          func(seq uint32) string
@@ -195,7 +198,9 @@ func (p *engineImpl) ensureCleaner() {
 					for _, it := range losts {
 						it.Close()
 					}
-					glog.Infof("***** kill %d DEAD sockets *****\n", len(losts))
+					if p.infoLogger != nil {
+						p.infoLogger.Printf("***** kill %d DEAD sockets *****\n", len(losts))
+					}
 				}
 				break
 			case <-p.junkKiller:
