@@ -42,6 +42,7 @@ type engineImpl struct {
 	junkKiller      chan struct{}
 	junkTicker      *time.Ticker
 	allowRequest    func(*http.Request) error
+	checkProtocol   bool
 }
 
 func (p *engineImpl) Router() func(http.ResponseWriter, *http.Request) {
@@ -59,11 +60,12 @@ func (p *engineImpl) Router() func(http.ResponseWriter, *http.Request) {
 		query := request.URL.Query()
 		var err error
 		// check protocol version
-		if err = p.checkVersion(query.Get("EIO")); err != nil {
-			sendError(writer, err, http.StatusBadRequest)
-			return
+		if p.checkProtocol {
+			if err = p.checkVersion(query.Get("EIO")); err != nil {
+				sendError(writer, err, http.StatusBadRequest)
+				return
+			}
 		}
-
 		// check transport
 		var ttype TransportType
 		if ttype, err = p.checkTransport(query.Get("transport")); err != nil {

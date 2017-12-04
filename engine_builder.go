@@ -25,6 +25,13 @@ type EngineBuilder struct {
 	path            string
 	gen             func(uint32) string
 	allowRequest    func(*http.Request) error
+	checkProtocol   bool
+}
+
+// ForceCheckProtocol force check eio protocol version in query EIO.
+func (p *EngineBuilder) ForceCheckProtocol() *EngineBuilder {
+	p.checkProtocol = true
+	return p
 }
 
 // SetAllowRequest set a function that receives a given request, and can decide whether to continue or not.
@@ -128,18 +135,19 @@ func (p *EngineBuilder) Build() Engine {
 		store: new(sync.Map),
 	}
 	eng := &engineImpl{
-		logInfo:    p.l1,
-		logWarn:    p.l2,
-		logErr:     p.l3,
-		sequence:   rand.Uint32(),
-		onSockets:  make([]func(Socket), 0),
-		options:    &clone,
-		sockets:    &sockets,
-		path:       p.path,
-		sidGen:     p.gen,
-		junkKiller: make(chan struct{}),
-		junkTicker: nil,
-		allowRequest: p.allowRequest,
+		logInfo:       p.l1,
+		logWarn:       p.l2,
+		logErr:        p.l3,
+		sequence:      rand.Uint32(),
+		onSockets:     make([]func(Socket), 0),
+		options:       &clone,
+		sockets:       &sockets,
+		path:          p.path,
+		sidGen:        p.gen,
+		junkKiller:    make(chan struct{}),
+		junkTicker:    nil,
+		allowRequest:  p.allowRequest,
+		checkProtocol: p.checkProtocol,
 	}
 	if len(p.allowTransports) < 1 {
 		eng.allowTransports = defaultTransports
