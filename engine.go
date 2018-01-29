@@ -21,8 +21,8 @@ type engineOptions struct {
 	cookie         bool
 	cookiePath     string
 	cookieHTTPOnly bool
-	pingInterval   uint
-	pingTimeout    uint
+	pingInterval   uint32
+	pingTimeout    uint32
 	handleAsync    bool
 }
 

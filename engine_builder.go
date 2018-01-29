@@ -111,13 +111,13 @@ func (p *EngineBuilder) SetAllowUpgrades(enable bool) *EngineBuilder {
 
 // SetPingInterval define ping time interval in millseconds for client. (default is 60 seconds)
 func (p *EngineBuilder) SetPingInterval(interval time.Duration) *EngineBuilder {
-	p.options.pingInterval = uint(interval.Seconds())
+	p.options.pingInterval = uint32(interval.Seconds())
 	return p
 }
 
 // SetPingTimeout define ping timeout in millseconds for client. (default is 25 seconds)
 func (p *EngineBuilder) SetPingTimeout(timeout time.Duration) *EngineBuilder {
-	p.options.pingTimeout = uint(timeout.Seconds())
+	p.options.pingTimeout = uint32(timeout.Seconds())
 	return p
 }
 
