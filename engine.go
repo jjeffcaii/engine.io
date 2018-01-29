@@ -7,8 +7,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"log"
 )
 
 var (
@@ -23,15 +21,15 @@ type engineOptions struct {
 	cookie         bool
 	cookiePath     string
 	cookieHTTPOnly bool
-	pingInterval   uint32
-	pingTimeout    uint32
+	pingInterval   uint
+	pingTimeout    uint
 	handleAsync    bool
 }
 
 type engineImpl struct {
-	logInfo         *log.Logger
-	logWarn         *log.Logger
-	logErr          *log.Logger
+	logInfo         func(format string, v ...interface{})
+	logWarn         func(format string, v ...interface{})
+	logErr          func(format string, v ...interface{})
 	allowTransports []TransportType
 	sidGen          func(seq uint32) string
 	sequence        uint32
@@ -206,7 +204,7 @@ func (p *engineImpl) ensureCleaner() {
 						it.Close()
 					}
 					if p.logInfo != nil {
-						p.logInfo.Printf("***** kill %d DEAD sockets *****\n", len(losts))
+						p.logInfo("***** kill %d DEAD sockets *****\n", len(losts))
 					}
 				}
 				break

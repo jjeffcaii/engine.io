@@ -12,7 +12,10 @@ import (
 	"time"
 )
 
-var emptyStringArray = make([]string, 0)
+var (
+	emptyStringArray = make([]string, 0)
+	b64Rep           = strings.NewReplacer("/", "_", "+", "-")
+)
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
@@ -49,8 +52,8 @@ func randomSessionID(seed uint32) string {
 	}
 	bs := bf.Bytes()
 	s := base64.StdEncoding.EncodeToString(bs)
-	s = strings.Replace(s, "/", "_", -1)
-	s = strings.Replace(s, "+", "-", -1)
+
+	s = b64Rep.Replace(s)
 	return s
 }
 

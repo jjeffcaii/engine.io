@@ -116,7 +116,7 @@ func (p *xhrTransport) doReqGet(writer http.ResponseWriter, request *http.Reques
 	if jsonp {
 		if _, err := p.res.Write([]byte(fmt.Sprintf("___eio[%s](\"", *j))); err != nil {
 			if p.eng.logErr != nil {
-				p.eng.logErr.Println("write jsonp prefix failed:", err)
+				p.eng.logErr("write jsonp prefix failed: %s\n", err)
 			}
 			return
 		}
@@ -126,7 +126,7 @@ func (p *xhrTransport) doReqGet(writer http.ResponseWriter, request *http.Reques
 		kill = true
 		if err := parser.WritePayloadTo(p.res, false, defaultPacketClose); err != nil {
 			if p.eng.logErr != nil {
-				p.eng.logErr.Println("write close packet failed:", err)
+				p.eng.logErr("write close packet failed: %s\n", err)
 			}
 			return
 		}
@@ -134,7 +134,7 @@ func (p *xhrTransport) doReqGet(writer http.ResponseWriter, request *http.Reques
 	if jsonp {
 		if _, err := p.res.Write(jsonpEnd); err != nil {
 			if p.eng.logErr != nil {
-				p.eng.logErr.Println("write jsonp suffix failed:", err)
+				p.eng.logErr("write jsonp suffix failed: %s\n", err)
 			}
 			return
 		}
@@ -162,7 +162,7 @@ func (p *xhrTransport) doReqPost(writer http.ResponseWriter, request *http.Reque
 		body, err = ioutil.ReadAll(request.Body)
 		if err != nil {
 			if p.eng.logErr != nil {
-				p.eng.logErr.Println("read request body failed:", err)
+				p.eng.logErr("read request body failed: %s\n", err)
 			}
 			return
 		}
@@ -170,7 +170,7 @@ func (p *xhrTransport) doReqPost(writer http.ResponseWriter, request *http.Reque
 	case "application/x-www-form-urlencoded":
 		if err := request.ParseForm(); err != nil {
 			if p.eng.logErr != nil {
-				p.eng.logErr.Println("parse post form failed:", err)
+				p.eng.logErr("parse post form failed: %s\n", err)
 			}
 			return
 		}
@@ -268,7 +268,7 @@ func (p *xhrTransport) flush() error {
 		select {
 		case <-closeNotifier.CloseNotify():
 			if p.eng.logWarn != nil {
-				p.eng.logWarn.Println("client close connect")
+				p.eng.logWarn("client close connect\n")
 			}
 			return errPollingEOF
 		case pk := <-p.outbox:

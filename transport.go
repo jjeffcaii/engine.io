@@ -31,7 +31,7 @@ func (p *tinyTransport) onWrite(fn func(), async bool) {
 				defer func() {
 					if e := recover(); e != nil {
 						if p.eng.logErr != nil {
-							p.eng.logErr.Println("handle write failed:", e)
+							p.eng.logErr("handle write failed: %s\n", e)
 						}
 					}
 				}()
@@ -43,7 +43,7 @@ func (p *tinyTransport) onWrite(fn func(), async bool) {
 			defer func() {
 				if e := recover(); e != nil {
 					if p.eng.logErr != nil {
-						p.eng.logErr.Println("handle write failed:", e)
+						p.eng.logErr("handle write failed: %s\n", e)
 					}
 				}
 			}()
@@ -62,7 +62,7 @@ func (p *tinyTransport) onFlush(fn func(), async bool) {
 				defer func() {
 					if e := recover(); e != nil {
 						if p.eng.logErr != nil {
-							p.eng.logErr.Println("handle flush failed:", e)
+							p.eng.logErr("handle flush failed: %s\n", e)
 						}
 					}
 				}()
@@ -74,7 +74,7 @@ func (p *tinyTransport) onFlush(fn func(), async bool) {
 			defer func() {
 				if e := recover(); e != nil {
 					if p.eng.logErr != nil {
-						p.eng.logErr.Println("handle flush failed:", e)
+						p.eng.logErr("handle flush failed: %s\n", e)
 					}
 				}
 			}()

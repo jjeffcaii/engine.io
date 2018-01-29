@@ -10,14 +10,12 @@ Unofficial server-side [Engine.IO](https://github.com/socketio/engine.io) in Gol
 package main
 
 import (
-	"flag"
 	"log"
 
 	"github.com/jjeffcaii/engine.io"
 )
 
 func main() {
-	flag.Parse()
 	server := eio.NewEngineBuilder().Build()
 	server.OnConnect(func(socket eio.Socket) {
 		socket.OnMessage(func(data []byte) {

@@ -55,7 +55,7 @@ func (p *wsTransport) ensureWebsocket(writer http.ResponseWriter, request *http.
 	conn, err := libWebsocket.Upgrade(writer, request, nil)
 	if err != nil {
 		if p.eng.logErr != nil {
-			p.eng.logErr.Println("websocket upgrade failed:", err)
+			p.eng.logErr("websocket upgrade failed: %s\n", err)
 		}
 		return err
 	}
@@ -82,7 +82,7 @@ func (p *wsTransport) doAccept(msg []byte, opt parser.PacketOption) {
 	pack, err := parser.Decode(msg, opt)
 	if err != nil {
 		if p.eng.logErr != nil {
-			p.eng.logErr.Println("decode packet failed:", err)
+			p.eng.logErr("decode packet failed: %s\n", err)
 		}
 		panic(err)
 	}
@@ -105,7 +105,7 @@ func (p *wsTransport) doReq(writer http.ResponseWriter, request *http.Request) {
 			return
 		}
 		if p.eng.logErr != nil {
-			p.eng.logErr.Println("do request failed:", e)
+			p.eng.logErr("do request failed: %s\n", e)
 		}
 	}()
 

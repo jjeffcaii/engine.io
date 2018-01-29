@@ -2,24 +2,25 @@ package eio
 
 import (
 	"errors"
-	"log"
 	"math/rand"
 	"net/http"
+	"strings"
 	"sync"
+	"time"
 )
 
 const (
-	defaultPingTimeout  uint32 = 60000
-	defaultPingInterval uint32 = 25000
+	defaultPingTimeout  = 60000
+	defaultPingInterval = 25000
 )
 
 var defaultTransports = []TransportType{POLLING, WEBSOCKET}
 
 // EngineBuilder is a builder for Engine.
 type EngineBuilder struct {
-	l1              *log.Logger
-	l2              *log.Logger
-	l3              *log.Logger
+	l1              func(format string, v ...interface{})
+	l2              func(format string, v ...interface{})
+	l3              func(format string, v ...interface{})
 	allowTransports []TransportType
 	options         *engineOptions
 	path            string
@@ -41,19 +42,19 @@ func (p *EngineBuilder) SetAllowRequest(validator func(*http.Request) error) *En
 }
 
 // SetLoggerInfo set logger for INFO
-func (p *EngineBuilder) SetLoggerInfo(logger *log.Logger) *EngineBuilder {
+func (p *EngineBuilder) SetLoggerInfo(logger func(format string, v ...interface{})) *EngineBuilder {
 	p.l1 = logger
 	return p
 }
 
 // SetLoggerWarn set logger for WARN
-func (p *EngineBuilder) SetLoggerWarn(logger *log.Logger) *EngineBuilder {
+func (p *EngineBuilder) SetLoggerWarn(logger func(format string, v ...interface{})) *EngineBuilder {
 	p.l2 = logger
 	return p
 }
 
 // SetLoggerError set logger for ERROR
-func (p *EngineBuilder) SetLoggerError(logger *log.Logger) *EngineBuilder {
+func (p *EngineBuilder) SetLoggerError(logger func(format string, v ...interface{})) *EngineBuilder {
 	p.l3 = logger
 	return p
 }
@@ -87,7 +88,7 @@ func (p *EngineBuilder) SetCookiePath(path string) *EngineBuilder {
 	if len(path) < 1 {
 		panic(errors.New("invalid cookie path: path is blank"))
 	}
-	if path[0] != '/' {
+	if strings.HasPrefix(path, "/") {
 		panic(errors.New("cookie path must starts with '/'"))
 	}
 	p.options.cookiePath = path
@@ -108,15 +109,15 @@ func (p *EngineBuilder) SetAllowUpgrades(enable bool) *EngineBuilder {
 	return p
 }
 
-// SetPingInterval define ping time interval in millseconds for client.
-func (p *EngineBuilder) SetPingInterval(interval uint32) *EngineBuilder {
-	p.options.pingInterval = interval
+// SetPingInterval define ping time interval in millseconds for client. (default is 60 seconds)
+func (p *EngineBuilder) SetPingInterval(interval time.Duration) *EngineBuilder {
+	p.options.pingInterval = uint(interval.Seconds())
 	return p
 }
 
-// SetPingTimeout define ping timeout in millseconds for client.
-func (p *EngineBuilder) SetPingTimeout(timeout uint32) *EngineBuilder {
-	p.options.pingTimeout = timeout
+// SetPingTimeout define ping timeout in millseconds for client. (default is 25 seconds)
+func (p *EngineBuilder) SetPingTimeout(timeout time.Duration) *EngineBuilder {
+	p.options.pingTimeout = uint(timeout.Seconds())
 	return p
 }
 

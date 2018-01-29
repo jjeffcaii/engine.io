@@ -45,7 +45,7 @@ func (p *socketImpl) OnClose(handler func(string)) Socket {
 			defer func() {
 				if e := recover(); e != nil {
 					if p.engine.logErr != nil {
-						p.engine.logErr.Println("handle socket close event failed:", e)
+						p.engine.logErr("handle socket close event failed: %s\n", e)
 					}
 				}
 			}()
@@ -77,7 +77,7 @@ func (p *socketImpl) OnMessage(handler func([]byte)) Socket {
 						}
 					}
 					if p.engine.logErr != nil {
-						p.engine.logErr.Println("handle socket message event failed:", e)
+						p.engine.logErr("handle socket message event failed: %s\n", e)
 					}
 				}()
 				handler(data)
@@ -100,13 +100,12 @@ func (p *socketImpl) OnMessage(handler func([]byte)) Socket {
 					}
 				}
 				if p.engine.logErr != nil {
-					p.engine.logErr.Println("handle socket message event failed:", e)
+					p.engine.logErr("handle socket message event failed: %s\n", e)
 				}
 			}()
 			handler(data)
 		})
 	}
-
 	return p
 }
 
@@ -118,7 +117,7 @@ func (p *socketImpl) OnError(handler func(error)) Socket {
 		defer func() {
 			if e := recover(); e != nil {
 				if p.engine.logErr != nil {
-					p.engine.logErr.Println("handle socket error event failed:", e)
+					p.engine.logErr("handle socket error event failed: %s\n", e)
 				}
 			}
 		}()
@@ -138,7 +137,7 @@ func (p *socketImpl) OnUpgrade(handler func()) Socket {
 				defer func() {
 					if e := recover(); e != nil {
 						if p.engine.logErr != nil {
-							p.engine.logErr.Println("handle socket upgrade event failed:", e)
+							p.engine.logErr("handle socket upgrade event failed: %s\n", e)
 						}
 					}
 				}()
@@ -150,7 +149,7 @@ func (p *socketImpl) OnUpgrade(handler func()) Socket {
 			defer func() {
 				if e := recover(); e != nil {
 					if p.engine.logErr != nil {
-						p.engine.logErr.Println("handle socket upgrade event failed:", e)
+						p.engine.logErr("handle socket upgrade event failed: %s\n", e)
 					}
 				}
 			}()
