@@ -14,6 +14,10 @@ const (
 	defaultPingInterval = 25000
 )
 
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
+
 var defaultTransports = []TransportType{POLLING, WEBSOCKET}
 
 // EngineBuilder is a builder for Engine.
