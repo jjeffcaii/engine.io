@@ -17,30 +17,26 @@ var (
 )
 
 type engineOptions struct {
-	allowUpgrades  bool
-	cookie         bool
-	cookiePath     string
-	cookieHTTPOnly bool
-	pingInterval   uint32
-	pingTimeout    uint32
-	handleAsync    bool
+	allowUpgrades             bool
+	cookie                    bool
+	cookiePath                string
+	cookieHTTPOnly            bool
+	pingInterval, pingTimeout time.Duration
 }
 
 type engineImpl struct {
-	logInfo         func(format string, v ...interface{})
-	logWarn         func(format string, v ...interface{})
-	logErr          func(format string, v ...interface{})
-	allowTransports []TransportType
-	sidGen          func(seq uint32) string
-	sequence        uint32
-	path            string
-	options         *engineOptions
-	onSockets       []func(Socket)
-	sockets         *socketMap
-	junkKiller      chan struct{}
-	junkTicker      *time.Ticker
-	allowRequest    func(*http.Request) error
-	checkProtocol   bool
+	logInfo, logWarn, logErr func(format string, v ...interface{})
+	allowTransports          []TransportType
+	sidGen                   func(seq uint32) string
+	sequence                 uint32
+	path                     string
+	options                  *engineOptions
+	onSockets                []func(Socket)
+	sockets                  *socketMap
+	junkKiller               chan struct{}
+	junkTicker               *time.Ticker
+	allowRequest             func(*http.Request) error
+	checkProtocol            bool
 }
 
 func (p *engineImpl) Router() func(http.ResponseWriter, *http.Request) {

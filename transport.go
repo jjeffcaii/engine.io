@@ -8,8 +8,8 @@ import (
 type messageOK struct {
 	Sid          string   `json:"sid"`
 	Upgrades     []string `json:"upgrades"`
-	PingInterval uint32   `json:"pingInterval"`
-	PingTimeout  uint32   `json:"pingTimeout"`
+	PingInterval int64    `json:"pingInterval"`
+	PingTimeout  int64    `json:"pingTimeout"`
 }
 
 type tinyTransport struct {
@@ -24,31 +24,20 @@ func (p *tinyTransport) onWrite(fn func(), async bool) {
 	if fn == nil {
 		return
 	}
-
-	if async {
-		p.handlerWrite = func() {
-			go func() {
-				defer func() {
-					if e := recover(); e != nil {
-						if p.eng.logErr != nil {
-							p.eng.logErr("handle write failed: %s\n", e)
-						}
-					}
-				}()
-				fn()
-			}()
-		}
-	} else {
-		p.handlerWrite = func() {
-			defer func() {
-				if e := recover(); e != nil {
-					if p.eng.logErr != nil {
-						p.eng.logErr("handle write failed: %s\n", e)
-					}
+	fn2 := func() {
+		defer func() {
+			if e := recover(); e != nil {
+				if p.eng.logErr != nil {
+					p.eng.logErr("handle write failed: %s\n", e)
 				}
-			}()
-			fn()
-		}
+			}
+		}()
+		fn()
+	}
+	if async {
+		p.handlerWrite = func() { go fn2() }
+	} else {
+		p.handlerWrite = fn2
 	}
 }
 
@@ -56,32 +45,21 @@ func (p *tinyTransport) onFlush(fn func(), async bool) {
 	if fn == nil {
 		return
 	}
-	if async {
-		p.handlerFlush = func() {
-			go func() {
-				defer func() {
-					if e := recover(); e != nil {
-						if p.eng.logErr != nil {
-							p.eng.logErr("handle flush failed: %s\n", e)
-						}
-					}
-				}()
-				fn()
-			}()
-		}
-	} else {
-		p.handlerFlush = func() {
-			defer func() {
-				if e := recover(); e != nil {
-					if p.eng.logErr != nil {
-						p.eng.logErr("handle flush failed: %s\n", e)
-					}
+	fn2 := func() {
+		defer func() {
+			if e := recover(); e != nil {
+				if p.eng.logErr != nil {
+					p.eng.logErr("handle flush failed: %s\n", e)
 				}
-			}()
-			fn()
-		}
+			}
+		}()
+		fn()
 	}
-
+	if async {
+		p.handlerFlush = func() { go fn2() }
+	} else {
+		p.handlerFlush = fn2
+	}
 }
 
 func (p *tinyTransport) setSocket(socket Socket) {

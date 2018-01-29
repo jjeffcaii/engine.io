@@ -72,8 +72,8 @@ func (p *wsTransport) ready(writer http.ResponseWriter, request *http.Request) e
 	msgOpen := parser.NewPacketByJSON(parser.OPEN, &messageOK{
 		Sid:          p.socket.id,
 		Upgrades:     emptyStringArray,
-		PingInterval: p.eng.options.pingInterval,
-		PingTimeout:  p.eng.options.pingTimeout,
+		PingInterval: int64(1000 * p.eng.options.pingInterval.Seconds()),
+		PingTimeout:  int64(1000 * p.eng.options.pingTimeout.Seconds()),
 	})
 	return p.write(msgOpen)
 }
@@ -188,12 +188,11 @@ func (p *wsTransport) close() error {
 }
 
 func newWebsocketTransport(eng *engineImpl) Transport {
-	t := &wsTransport{
+	return &wsTransport{
 		tinyTransport: tinyTransport{
 			eng:    eng,
 			locker: new(sync.RWMutex),
 		},
 		outbox: newQueue(),
 	}
-	return t
 }

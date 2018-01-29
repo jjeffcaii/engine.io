@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	defaultPingTimeout  = 60000
-	defaultPingInterval = 25000
+	defaultPingTimeout  = 60 * time.Second
+	defaultPingInterval = 25 * time.Second
 )
 
 func init() {
@@ -22,9 +22,7 @@ var defaultTransports = []TransportType{POLLING, WEBSOCKET}
 
 // EngineBuilder is a builder for Engine.
 type EngineBuilder struct {
-	l1              func(format string, v ...interface{})
-	l2              func(format string, v ...interface{})
-	l3              func(format string, v ...interface{})
+	l1, l2, l3      func(format string, v ...interface{})
 	allowTransports []TransportType
 	options         *engineOptions
 	path            string
@@ -115,19 +113,13 @@ func (p *EngineBuilder) SetAllowUpgrades(enable bool) *EngineBuilder {
 
 // SetPingInterval define ping time interval in millseconds for client. (default is 60 seconds)
 func (p *EngineBuilder) SetPingInterval(interval time.Duration) *EngineBuilder {
-	p.options.pingInterval = uint32(interval.Seconds())
+	p.options.pingInterval = interval
 	return p
 }
 
 // SetPingTimeout define ping timeout in millseconds for client. (default is 25 seconds)
 func (p *EngineBuilder) SetPingTimeout(timeout time.Duration) *EngineBuilder {
-	p.options.pingTimeout = uint32(timeout.Seconds())
-	return p
-}
-
-// ForceAsyncHandle enable message handlers runing async. (default is sync)
-func (p *EngineBuilder) ForceAsyncHandle() *EngineBuilder {
-	p.options.handleAsync = true
+	p.options.pingTimeout = timeout
 	return p
 }
 

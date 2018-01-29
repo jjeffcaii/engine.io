@@ -4,13 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	"github.com/jjeffcaii/engine.io/parser"
 )
 
 type socketImpl struct {
 	id        string
-	heartbeat uint32
+	heartbeat int64
 	engine    *engineImpl
 
 	msgHanders      []func([]byte)
@@ -59,53 +60,27 @@ func (p *socketImpl) OnMessage(handler func([]byte)) Socket {
 	if handler == nil {
 		return p
 	}
-	if p.engine.options.handleAsync {
-		p.msgHanders = append(p.msgHanders, func(data []byte) {
-			go func() {
-				defer func() {
-					e := recover()
-					if e == nil {
-						return
-					}
-					err, ok := e.(error)
-					if !ok {
-						return
-					}
-					if p.errorHandlers != nil {
-						for _, fn := range p.errorHandlers {
-							fn(err)
-						}
-					}
-					if p.engine.logErr != nil {
-						p.engine.logErr("handle socket message event failed: %s\n", e)
-					}
-				}()
-				handler(data)
-			}()
-		})
-	} else {
-		p.msgHanders = append(p.msgHanders, func(data []byte) {
-			defer func() {
-				e := recover()
-				if e == nil {
-					return
+	p.msgHanders = append(p.msgHanders, func(data []byte) {
+		defer func() {
+			e := recover()
+			if e == nil {
+				return
+			}
+			err, ok := e.(error)
+			if !ok {
+				return
+			}
+			if p.errorHandlers != nil {
+				for _, fn := range p.errorHandlers {
+					fn(err)
 				}
-				err, ok := e.(error)
-				if !ok {
-					return
-				}
-				if p.errorHandlers != nil {
-					for _, fn := range p.errorHandlers {
-						fn(err)
-					}
-				}
-				if p.engine.logErr != nil {
-					p.engine.logErr("handle socket message event failed: %s\n", e)
-				}
-			}()
-			handler(data)
-		})
-	}
+			}
+			if p.engine.logErr != nil {
+				p.engine.logErr("handle socket message event failed: %s\n", e)
+			}
+		}()
+		handler(data)
+	})
 	return p
 }
 
@@ -130,37 +105,21 @@ func (p *socketImpl) OnUpgrade(handler func()) Socket {
 	if handler == nil {
 		return p
 	}
-
-	if p.engine.options.handleAsync {
-		p.upgradeHandlers = append(p.upgradeHandlers, func() {
-			go func() {
-				defer func() {
-					if e := recover(); e != nil {
-						if p.engine.logErr != nil {
-							p.engine.logErr("handle socket upgrade event failed: %s\n", e)
-						}
-					}
-				}()
-				handler()
-			}()
-		})
-	} else {
-		p.upgradeHandlers = append(p.upgradeHandlers, func() {
-			defer func() {
-				if e := recover(); e != nil {
-					if p.engine.logErr != nil {
-						p.engine.logErr("handle socket upgrade event failed: %s\n", e)
-					}
+	p.upgradeHandlers = append(p.upgradeHandlers, func() {
+		defer func() {
+			if e := recover(); e != nil {
+				if p.engine.logErr != nil {
+					p.engine.logErr("handle socket upgrade event failed: %s\n", e)
 				}
-			}()
-			handler()
-		})
-	}
+			}
+		}()
+		handler()
+	})
 	return p
 }
 
 func (p *socketImpl) Send(message interface{}) error {
-	if atomic.LoadUint32(&(p.heartbeat)) == 0 {
+	if atomic.LoadInt64(&(p.heartbeat)) == 0 {
 		return fmt.Errorf("socket#%s is closed", p.id)
 	}
 	packet := parser.NewPacket(parser.MESSAGE, message)
@@ -171,10 +130,10 @@ func (p *socketImpl) Send(message interface{}) error {
 }
 
 func (p *socketImpl) Close() {
-	if atomic.LoadUint32(&(p.heartbeat)) == 0 {
+	if atomic.LoadInt64(&(p.heartbeat)) == 0 {
 		return
 	}
-	atomic.StoreUint32(&(p.heartbeat), 0)
+	atomic.StoreInt64(&(p.heartbeat), 0)
 	var reason string
 	if p.transportPrimary != nil {
 		if err := p.transportPrimary.close(); err != nil {
@@ -246,8 +205,8 @@ func (p *socketImpl) accept(packet *parser.Packet) error {
 	case parser.PING:
 		go func() {
 			// refresh heartbeat then pong it.
-			if atomic.LoadUint32(&(p.heartbeat)) != 0 {
-				atomic.StoreUint32(&(p.heartbeat), now32())
+			if atomic.LoadInt64(&(p.heartbeat)) != 0 {
+				atomic.StoreInt64(&(p.heartbeat), time.Now().Unix())
 			}
 			pong := parser.NewPacketCustom(parser.PONG, packet.Data, 0)
 			p.getTransport().write(pong)
@@ -263,15 +222,15 @@ func (p *socketImpl) accept(packet *parser.Packet) error {
 }
 
 func (p *socketImpl) isLost() bool {
-	d := 1000 * (now32() - atomic.LoadUint32(&(p.heartbeat)))
-	return d > p.engine.options.pingTimeout
+	d := time.Now().Unix() - atomic.LoadInt64(&(p.heartbeat))
+	return d > int64(p.engine.options.pingTimeout.Seconds())
 }
 
 func newSocket(id string, eng *engineImpl) *socketImpl {
 	socket := &socketImpl{
 		id:              id,
 		engine:          eng,
-		heartbeat:       now32(),
+		heartbeat:       time.Now().Unix(),
 		upgradeHandlers: make([]func(), 0),
 		msgHanders:      make([]func([]byte), 0),
 		errorHandlers:   make([]func(error), 0),

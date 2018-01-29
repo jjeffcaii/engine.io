@@ -62,8 +62,8 @@ func (p *xhrTransport) ready(writer http.ResponseWriter, request *http.Request) 
 	okMsg := messageOK{
 		Sid:          p.socket.id,
 		Upgrades:     make([]string, 0),
-		PingInterval: p.eng.options.pingInterval,
-		PingTimeout:  p.eng.options.pingTimeout,
+		PingInterval: int64(1000 * p.eng.options.pingInterval.Seconds()),
+		PingTimeout:  int64(1000 * p.eng.options.pingTimeout.Seconds()),
 	}
 	if p.eng.options.allowUpgrades {
 		for _, it := range p.eng.allowTransports {
@@ -219,20 +219,22 @@ func (p *xhrTransport) upgradeEnd(dest Transport) error {
 	return nil
 }
 
-func (p *xhrTransport) write(packet *parser.Packet) error {
-	var err error
-	func() {
-		defer func() {
-			e := recover()
-			if e == nil {
-				return
-			}
-			if e2, ok := e.(error); ok {
-				err = e2
-			}
-		}()
-		p.outbox <- packet
+func (p *xhrTransport) write(packet *parser.Packet) (err error) {
+	defer func() {
+		e := recover()
+		if e == nil {
+			return
+		}
+		switch e.(type) {
+		case error:
+			err = e.(error)
+			break
+		case string:
+			err = errors.New(e.(string))
+			break
+		}
 	}()
+	p.outbox <- packet
 	if p.handlerWrite != nil {
 		p.handlerWrite()
 	}
@@ -277,7 +279,7 @@ func (p *xhrTransport) flush() error {
 			}
 			queue = append(queue, pk)
 			break
-		case <-time.After(time.Millisecond * time.Duration(p.eng.options.pingTimeout)):
+		case <-time.After(p.eng.options.pingTimeout):
 			return errPollingEOF
 			//queue = append(queue, parser.NewPacketCustom(parser.CLOSE, make([]byte, 0), 0))
 		}

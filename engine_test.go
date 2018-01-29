@@ -3,12 +3,13 @@ package eio
 import (
 	"log"
 	"testing"
+	"time"
 )
 
 var server Engine
 
 func init() {
-	server = NewEngineBuilder().SetPingTimeout(3000).SetPingInterval(5000).Build()
+	server = NewEngineBuilder().SetPingTimeout(time.Minute).SetPingInterval(30 * time.Second).Build()
 }
 
 func TestFunction(t *testing.T) {
