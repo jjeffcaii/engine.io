@@ -37,7 +37,7 @@ func init() {
              }
              let socket = eio(u,options);
              socket.on('open', () => {
-                 let totals = 10000
+                 let totals = 1000
                  let count = 0
                  socket.on('message', (data) => {
                      console.log("MSG#%d => %s", ++count, data.toString());
