@@ -12,6 +12,7 @@ import (
 const (
 	defaultPingTimeout  = 60 * time.Second
 	defaultPingInterval = 25 * time.Second
+	defaultCookiePath   = "/"
 )
 
 func init() {
@@ -160,7 +161,7 @@ func (p *EngineBuilder) Build() Engine {
 func NewEngineBuilder() *EngineBuilder {
 	options := engineOptions{
 		cookie:         false,
-		cookiePath:     "/",
+		cookiePath:     defaultCookiePath,
 		cookieHTTPOnly: true,
 		pingInterval:   defaultPingInterval,
 		pingTimeout:    defaultPingTimeout,
