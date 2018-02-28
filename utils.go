@@ -57,10 +57,6 @@ func randomSessionID(seed uint32) string {
 	return s
 }
 
-func now32() uint32 {
-	return uint32(time.Now().Unix())
-}
-
 type queue struct {
 	lock *sync.RWMutex
 	q    []interface{}
@@ -68,7 +64,7 @@ type queue struct {
 
 func newQueue() *queue {
 	foo := queue{
-		lock: new(sync.RWMutex),
+		lock: &sync.RWMutex{},
 		q:    make([]interface{}, 0),
 	}
 	return &foo
@@ -82,8 +78,8 @@ func (p *queue) size() int {
 
 func (p *queue) append(item interface{}) {
 	p.lock.Lock()
+	defer p.lock.Unlock()
 	p.q = append(p.q, item)
-	p.lock.Unlock()
 }
 
 func (p *queue) pop() (interface{}, bool) {
@@ -99,8 +95,8 @@ func (p *queue) pop() (interface{}, bool) {
 
 func (p *queue) reset() []interface{} {
 	p.lock.Lock()
+	defer p.lock.Unlock()
 	var ret []interface{}
 	ret, p.q = p.q[:], p.q[:0]
-	p.lock.Unlock()
 	return ret
 }

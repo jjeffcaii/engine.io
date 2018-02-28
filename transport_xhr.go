@@ -13,7 +13,7 @@ import (
 
 const (
 	noopDelay       = 1 * time.Second
-	outboxThreshold = 64 // The smaller this value, the more GET will be requested.
+	outboxThreshold = 128 // The smaller this value, the more GET will be requested.
 )
 
 var (
@@ -31,7 +31,6 @@ type xhrTransport struct {
 }
 
 func (p *xhrTransport) GetRequest() *http.Request {
-
 	return p.req
 }
 
@@ -248,10 +247,13 @@ func (p *xhrTransport) flush() error {
 	end := false
 	for {
 		select {
-		case pk := <-p.outbox:
-			if pk == nil {
+		case pk, ok := <-p.outbox:
+			if !ok {
 				return errPollingEOF
 			}
+			/*if pk == nil {
+				return errPollingEOF
+			}*/
 			queue = append(queue, pk)
 			if pk.Type == parser.OPEN {
 				end = true
@@ -305,17 +307,19 @@ func (p *xhrTransport) flush() error {
 	return nil
 }
 
-func (p *xhrTransport) close() error {
-	var err error
-	func() {
-		defer func() {
-			e := recover()
-			if ex, ok := e.(error); ok {
-				err = ex
-			}
-		}()
-		close(p.outbox)
+func (p *xhrTransport) close() (err error) {
+	defer func() {
+		e := recover()
+		if e == nil {
+			return
+		}
+		if ex, ok := e.(error); ok {
+			err = ex
+		} else {
+			err = fmt.Errorf("%s", ex)
+		}
 	}()
+	close(p.outbox)
 	return err
 }
 
@@ -323,7 +327,7 @@ func newXhrTransport(server *engineImpl) Transport {
 	trans := xhrTransport{
 		tinyTransport: tinyTransport{
 			eng:    server,
-			locker: new(sync.RWMutex),
+			locker: &sync.RWMutex{},
 		},
 		outbox: make(chan *parser.Packet, outboxThreshold),
 	}

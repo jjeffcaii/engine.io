@@ -50,7 +50,7 @@ func init() {
                      alert('socket close');
 	             });
 	             for(let i=0;i<totals;i++){
-                     socket.send('你好，'+i+'世界!');
+                     setTimeout(()=>socket.send('你好，'+i+'世界!'),10*i);
                  }
              });
          }
