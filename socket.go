@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/jjeffcaii/engine.io/parser"
+	"github.com/jjeffcaii/engine.io/internal/parser"
 )
 
 type socketImpl struct {
@@ -166,13 +166,13 @@ func (p *socketImpl) setTransport(t Transport) error {
 }
 
 func (p *socketImpl) getTransport() Transport {
-	if p.transportPrimary != nil {
-		return p.transportPrimary
-	} else if p.transportBackup != nil {
-		return p.transportBackup
-	} else {
+	if p.transportPrimary == nil && p.transportBackup == nil {
 		panic(errors.New("transport unavailable"))
 	}
+	if p.transportPrimary != nil {
+		return p.transportPrimary
+	}
+	return p.transportBackup
 }
 
 func (p *socketImpl) getTransportOld() Transport {
@@ -182,26 +182,27 @@ func (p *socketImpl) getTransportOld() Transport {
 	return p.transportBackup
 }
 
-func (p *socketImpl) accept(packet *parser.Packet) error {
+func (p *socketImpl) accept(packet *parser.Packet) (err error) {
 	switch packet.Type {
-	default:
-		return fmt.Errorf("unsupport packet: %d", packet.Type)
+
 	case parser.CLOSE:
 		p.Close()
-		break
 	case parser.UPGRADE:
 		if p.transportPrimary != nil && p.transportBackup != nil {
 			old := p.transportBackup
-			old.upgradeEnd(p.transportPrimary)
+			err = old.upgradeEnd(p.transportPrimary)
+			if err != nil {
+				return
+			}
 			p.transportBackup = nil
-			if err := old.close(); err != nil {
-				return err
+			err = old.close()
+			if err != nil {
+				return
 			}
 		}
 		for _, fn := range p.upgradeHandlers {
 			fn()
 		}
-		break
 	case parser.PING:
 		go func() {
 			// refresh heartbeat then pong it.
@@ -209,16 +210,16 @@ func (p *socketImpl) accept(packet *parser.Packet) error {
 				atomic.StoreInt64(&(p.heartbeat), time.Now().Unix())
 			}
 			pong := parser.NewPacketCustom(parser.PONG, packet.Data, 0)
-			p.getTransport().write(pong)
+			_ = p.getTransport().write(pong)
 		}()
-		break
 	case parser.MESSAGE:
 		for _, fn := range p.msgHanders {
 			fn(packet.Data)
 		}
-		break
+	default:
+		err = fmt.Errorf("unsupport packet: %d", packet.Type)
 	}
-	return nil
+	return
 }
 
 func (p *socketImpl) isLost() bool {

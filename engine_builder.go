@@ -2,7 +2,6 @@ package eio
 
 import (
 	"errors"
-	"math/rand"
 	"net/http"
 	"strings"
 	"sync"
@@ -15,9 +14,6 @@ const (
 	defaultCookiePath   = "/"
 )
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
 
 var defaultTransports = []TransportType{POLLING, WEBSOCKET}
 
@@ -112,13 +108,13 @@ func (p *EngineBuilder) SetAllowUpgrades(enable bool) *EngineBuilder {
 	return p
 }
 
-// SetPingInterval define ping time interval in millseconds for client. (default is 60 seconds)
+// SetPingInterval define ping time interval in milliseconds for client. (default is 60 seconds)
 func (p *EngineBuilder) SetPingInterval(interval time.Duration) *EngineBuilder {
 	p.options.pingInterval = interval
 	return p
 }
 
-// SetPingTimeout define ping timeout in millseconds for client. (default is 25 seconds)
+// SetPingTimeout define ping timeout in milliseconds for client. (default is 25 seconds)
 func (p *EngineBuilder) SetPingTimeout(timeout time.Duration) *EngineBuilder {
 	p.options.pingTimeout = timeout
 	return p
@@ -132,11 +128,16 @@ func (p *EngineBuilder) Build() Engine {
 	sockets := socketMap{
 		store: new(sync.Map),
 	}
+
+	randomLocker.Lock()
+	sequence := random.Uint32()
+	randomLocker.Unlock()
+
 	eng := &engineImpl{
 		logInfo:       p.l1,
 		logWarn:       p.l2,
 		logErr:        p.l3,
-		sequence:      rand.Uint32(),
+		sequence:      sequence,
 		onSockets:     make([]func(Socket), 0),
 		options:       &clone,
 		sockets:       &sockets,

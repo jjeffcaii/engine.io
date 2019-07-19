@@ -17,10 +17,12 @@ import (
 var (
 	emptyStringArray = make([]string, 0)
 	b64Rep           = strings.NewReplacer("/", "_", "+", "-")
+	random           *rand.Rand
+	randomLocker     sync.Mutex
 )
 
 func init() {
-	rand.Seed(time.Now().UnixNano())
+	random = rand.New(rand.NewSource(time.Now().UnixNano()))
 }
 
 func sendError(writer http.ResponseWriter, e error, codes ...int) {
@@ -44,44 +46,40 @@ func sendError(writer http.ResponseWriter, e error, codes ...int) {
 
 func randomSessionID(seed uint32) string {
 	bf := new(bytes.Buffer)
+	var b byte
 	for i := 0; i < 12; i++ {
-		bf.WriteByte(byte(rand.Int31n(256)))
+		randomLocker.Lock()
+		b = byte(rand.Int31n(256))
+		randomLocker.Unlock()
+		bf.WriteByte(b)
 	}
-	b := make([]byte, 4)
-	binary.BigEndian.PutUint32(b, seed)
-	for i := 1; i < 4; i++ {
-		bf.WriteByte(b[i])
-	}
+	_ = binary.Write(bf, binary.BigEndian, seed)
 	bs := bf.Bytes()
 	s := base64.StdEncoding.EncodeToString(bs)
-
 	s = b64Rep.Replace(s)
 	return s
 }
 
 type queue struct {
-	lock *sync.RWMutex
+	lock sync.RWMutex
 	q    []interface{}
 }
 
 func newQueue() *queue {
-	foo := queue{
-		lock: &sync.RWMutex{},
-		q:    make([]interface{}, 0),
-	}
-	return &foo
+	return &queue{}
 }
 
-func (p *queue) size() int {
+func (p *queue) size() (size int) {
 	p.lock.RLock()
-	defer p.lock.RUnlock()
-	return len(p.q)
+	size = len(p.q)
+	p.lock.RUnlock()
+	return
 }
 
 func (p *queue) append(item interface{}) {
 	p.lock.Lock()
-	defer p.lock.Unlock()
 	p.q = append(p.q, item)
+	p.lock.Unlock()
 }
 
 func (p *queue) pop() (interface{}, bool) {

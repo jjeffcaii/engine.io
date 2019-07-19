@@ -3,7 +3,7 @@ package eio
 import (
 	"net/http"
 
-	"github.com/jjeffcaii/engine.io/parser"
+	"github.com/jjeffcaii/engine.io/internal/parser"
 )
 
 // TransportType define the type of transport.

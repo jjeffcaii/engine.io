@@ -61,9 +61,9 @@ func (p *engineImpl) Router() func(http.ResponseWriter, *http.Request) {
 			}
 		}
 		// check transport
-		var ttype TransportType
-		if ttype, err = p.checkTransport(query.Get("transport")); err != nil {
-			sendError(writer, errors.New("transprot error"), http.StatusBadRequest, 0)
+		var tpType TransportType
+		if tpType, err = p.checkTransport(query.Get("transport")); err != nil {
+			sendError(writer, errors.New("transport error"), http.StatusBadRequest, 0)
 			return
 		}
 
@@ -76,14 +76,14 @@ func (p *engineImpl) Router() func(http.ResponseWriter, *http.Request) {
 		}
 
 		var sid = query.Get("sid")
-		var isNew = len(sid) < 1
+		var newborn = len(sid) < 1
 
 		var socket *socketImpl
 		var tp Transport
 
-		if isNew {
+		if newborn {
 			sid = p.generateID()
-			tp, socket = newTransport(p, ttype), newSocket(sid, p)
+			tp, socket = newTransport(p, tpType), newSocket(sid, p)
 			socket.setTransport(tp)
 			tp.setSocket(socket)
 			if err = tp.ready(writer, request); err != nil {
@@ -95,22 +95,27 @@ func (p *engineImpl) Router() func(http.ResponseWriter, *http.Request) {
 			})
 			p.sockets.Put(socket)
 			p.socketCreated(socket)
-		} else if socket0, ok := p.sockets.Get(sid); !ok {
+			tp.doReq(writer, request)
+			return
+		}
+
+		oldSocket, ok := p.sockets.Get(sid)
+		if !ok {
 			sendError(writer, fmt.Errorf("%s:socket#%s doesn't exist", request.Method, sid))
 			return
+		}
+
+		socket = oldSocket
+		oldTp := oldSocket.getTransport()
+		oldTpType := oldTp.GetType()
+		if tpType > oldTpType {
+			tp = newTransport(p, tpType)
+			tp.setSocket(socket)
+			socket.setTransport(tp)
+		} else if tpType < oldTpType {
+			tp = oldSocket.getTransportOld()
 		} else {
-			socket = socket0
-			tp0 := socket0.getTransport()
-			ttype0 := tp0.GetType()
-			if ttype > ttype0 {
-				tp = newTransport(p, ttype)
-				tp.setSocket(socket)
-				socket.setTransport(tp)
-			} else if ttype < ttype0 {
-				tp = socket0.getTransportOld()
-			} else {
-				tp = tp0
-			}
+			tp = oldTp
 		}
 		tp.doReq(writer, request)
 	}

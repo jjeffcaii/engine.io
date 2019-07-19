@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jjeffcaii/engine.io/parser"
+	"github.com/jjeffcaii/engine.io/internal/parser"
 )
 
 const (
@@ -46,12 +46,12 @@ func (p *xhrTransport) GetSocket() Socket {
 	return p.socket
 }
 
-func (p *xhrTransport) tryJSONP() (*string, bool) {
-	j := p.req.URL.Query().Get("j")
-	if len(j) < 1 {
-		return nil, false
+func (p *xhrTransport) tryJSONP() (callback *string, ok bool) {
+	if j := p.req.URL.Query().Get("j"); len(j) > 0 {
+		callback = &j
+		ok = true
 	}
-	return &j, true
+	return
 }
 
 func (p *xhrTransport) ready(writer http.ResponseWriter, request *http.Request) error {
@@ -93,14 +93,10 @@ func (p *xhrTransport) doReq(writer http.ResponseWriter, request *http.Request) 
 		writer.Header().Set("Access-Control-Allow-Origin", "*")
 	}
 	switch request.Method {
-	default:
-		break
 	case http.MethodGet:
 		p.doReqGet(writer, request)
-		break
 	case http.MethodPost:
 		p.doReqPost(writer, request)
-		break
 	}
 }
 

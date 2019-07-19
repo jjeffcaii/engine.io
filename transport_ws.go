@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/gorilla/websocket"
-	"github.com/jjeffcaii/engine.io/parser"
+	"github.com/jjeffcaii/engine.io/internal/parser"
 )
 
 var (
