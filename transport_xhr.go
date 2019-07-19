@@ -28,9 +28,15 @@ type xhrTransport struct {
 	outbox chan *parser.Packet
 	req    *http.Request
 	res    http.ResponseWriter
+	cond   *sync.Cond
 }
 
 func (p *xhrTransport) GetRequest() *http.Request {
+	p.cond.L.Lock()
+	for p.req == nil {
+		p.cond.Wait()
+	}
+	p.cond.L.Unlock()
 	return p.req
 }
 
@@ -47,7 +53,7 @@ func (p *xhrTransport) GetSocket() Socket {
 }
 
 func (p *xhrTransport) tryJSONP() (callback *string, ok bool) {
-	if j := p.req.URL.Query().Get("j"); len(j) > 0 {
+	if j := p.GetRequest().URL.Query().Get("j"); len(j) > 0 {
 		callback = &j
 		ok = true
 	}
@@ -101,8 +107,11 @@ func (p *xhrTransport) doReq(writer http.ResponseWriter, request *http.Request) 
 }
 
 func (p *xhrTransport) doReqGet(writer http.ResponseWriter, request *http.Request) {
+	p.cond.L.Lock()
 	p.req = request
 	p.res = writer
+	p.cond.Broadcast()
+	p.cond.L.Unlock()
 	defer func() {
 		p.req = nil
 		p.res = nil
@@ -294,15 +303,7 @@ func (p *xhrTransport) flush() error {
 
 func (p *xhrTransport) close() (err error) {
 	defer func() {
-		e := recover()
-		if e == nil {
-			return
-		}
-		if ex, ok := e.(error); ok {
-			err = ex
-		} else {
-			err = fmt.Errorf("%s", ex)
-		}
+		err = tryRecover(recover())
 	}()
 	close(p.outbox)
 	return err
@@ -315,6 +316,7 @@ func newXhrTransport(server *engineImpl) Transport {
 			locker: &sync.RWMutex{},
 		},
 		outbox: make(chan *parser.Packet, outboxThreshold),
+		cond:   sync.NewCond(&sync.Mutex{}),
 	}
 	return &trans
 }
