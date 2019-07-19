@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"math/rand"
 	"net/http"
 	"strings"
@@ -99,4 +101,18 @@ func (p *queue) reset() []interface{} {
 	var ret []interface{}
 	ret, p.q = p.q[:], p.q[:0]
 	return ret
+}
+
+func tryRecover(e interface{}) error {
+	if e == nil {
+		return nil
+	}
+	switch v := e.(type) {
+	case error:
+		return v
+	case string:
+		return errors.New(v)
+	default:
+		return fmt.Errorf("%s", v)
+	}
 }

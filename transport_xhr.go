@@ -220,24 +220,13 @@ func (p *xhrTransport) upgradeEnd(dest Transport) error {
 
 func (p *xhrTransport) write(packet *parser.Packet) (err error) {
 	defer func() {
-		e := recover()
-		if e == nil {
-			return
-		}
-		switch e.(type) {
-		case error:
-			err = e.(error)
-			break
-		case string:
-			err = errors.New(e.(string))
-			break
-		}
+		err = tryRecover(recover())
 	}()
 	p.outbox <- packet
 	if p.handlerWrite != nil {
 		p.handlerWrite()
 	}
-	return nil
+	return
 }
 
 func (p *xhrTransport) flush() error {
